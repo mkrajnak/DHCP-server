@@ -1,2 +1,2 @@
 # DHCP-server
-DHCP server implementation for IPK cource at fit.vutbr.cz
+DHCP server implementation for ISA cource at fit.vutbr.cz
