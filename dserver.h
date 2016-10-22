@@ -16,7 +16,16 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-const int BUFSIZE = 1024;
+const int DHCP_NONE = 0;
+const int DHCP_DISCOVER = 1;
+const int DHCP_OFFER = 2;
+const int DHCP_REQUEST = 3;
+const int DHCP_DECLINE = 4;
+const int DHCP_ACK = 5;
+const int DHCP_NAK = 6;
+const int DHCP_RELEASE = 7;
+const int DHCP_INFORM	 = 8;
+const int BUFSIZE = 512;
 
 void help();
 void listen_wrapper(int server_socket);

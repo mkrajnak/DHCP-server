@@ -4,7 +4,7 @@ LDFLAGS=-Wl,-rpath=/usr/local/lib/gcc49/
 SERVER=dserver.cpp dserver.h
 all: dserver
 
-server: $(SERVER)
+dserver: $(SERVER)
 	$(CC) $(CXXFLAGS) $(LDFLAGS) $(SERVER) -o $@
 clean:
 	rm -f dserver

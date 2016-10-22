@@ -20,17 +20,6 @@ void help()
         "be provided to clients, separated by comma \n"
       );
 }
-/**
-* Listen for new connections handle errors
-*/
-void listen_wrapper(int server_socket)
-{
-  if ((listen(server_socket, 1)) < 0) // listen for incomming connection
-  {
-    perror("ERROR: listen");
-    exit(EXIT_FAILURE);
-  }
-}
 
 /**
 * Try to fork and handle errors
@@ -46,16 +35,6 @@ int fork_handler()
   return pid;
 }
 
-/*
-* Will return new socket for serving new client
-*/
-int get_new_client(int server_socket)
-{
-  struct sockaddr_in client;              //new client address
-  socklen_t client_len = sizeof(client);  //size
-  return accept(server_socket, (struct sockaddr*)&client, &client_len);
-}
-
 /**
 * Send message
 */
@@ -69,7 +48,7 @@ void send_msg(int socket, char *msg)
 /**
 * Function return first match achieved rgx_string
 */
-string get_regex_match(char *haystack,char * rgx_string)
+string get_regex_match(char *haystack, char * rgx_string)
 {
   cmatch match;         //store matches
   regex rgx(rgx_string);//create and compile regex
@@ -84,48 +63,129 @@ string get_regex_match(char *haystack,char * rgx_string)
 * Communicate with client
 * Messages DISCOVER, OFFER, REQUEST, ACK, NACK, RELEASE
 */
-void serve(int client_socket)
+void serve(int srv_socket)
 {
-  char buffer[1024];
-  while((recv(client_socket, buffer, 1023,0)) > 0)//handle message
-  {
-    string received = string (buffer);  //conversion to string
+  socklen_t length;
+  struct sockaddr_in client;
+  unsigned char buffer[BUFSIZE];
+  memset( buffer, 0 ,sizeof(buffer));
 
-    if (received.find("DISCOVER") != string::npos) //Requested upload
-      printf("DISCOVER\n" );
-    else if ( received.find("OFFER") != string::npos )  //Requested download
-      printf("OFFER\n" );
-    else
-    send_msg(client_socket,(char *)"ERR");//Message not recognized ERR
-    memset(buffer, 0, 1024);
+  length = sizeof(client);
+  int rcvd = 0; // recieved data
+  while ((rcvd = recvfrom(srv_socket, buffer, BUFSIZE, 0, (struct sockaddr *)&client, &length)) >= 0)
+  {
+    printf("Request received from %s, port %d\n",inet_ntoa(client.sin_addr),ntohs(client.sin_port));
+    printf("Message:\n");// \"%d\":end\n", buffer[0]);
+
+    int op = buffer[0];         // Request 1, Reply 2
+    int h_type = buffer[1];
+    int h_len = buffer[2];
+    int hops = buffer[3];
+
+    printf("%d\n", op);
+    printf("%d\n", h_type);
+    printf("%d\n", h_len );
+    printf("%d\n", hops);
+
+    unsigned char xid[4];
+    memcpy(xid, &buffer[4], 4);
+    printf("Xid: 0x");
+    for (int i = 0; i < 4; i++) {
+      printf("%02x", xid[i]);
+    }
+    printf("\n");
+
+    unsigned char secs[2];
+    memcpy(secs, &buffer[8], 2);
+    for (int i = 0; i < 2; i++) {
+      printf("%02x", secs[i]);
+    }
+    printf("\n");
+
+    unsigned char flags[2];
+    memcpy(flags, &buffer[10], 2);
+    for (int i = 0; i < 2; i++) {
+      printf("%02x", flags[i]);
+    }
+    printf("\n");
+
+    unsigned char ciadr[4];
+    memcpy(ciadr, &buffer[12], 4);
+    printf("ciadr: ");
+    for (int i = 0; i < 4; i++) {
+      printf("%d.", ciadr[i]);
+    }
+    printf("\n");
+
+    unsigned char yaddr[4];
+    memcpy(yaddr, &buffer[16], 4);
+    printf("yaddr: ");
+    for (int i = 0; i < 4; i++) {
+      printf("%d.",yaddr[i]);
+    }
+    printf("\n");
+
+    unsigned char siaddr[4];
+    memcpy(siaddr, &buffer[20], 4);
+    printf("siaddr: ");
+    for (int i = 0; i < 4; i++) {
+      printf("%d.",siaddr[i]);
+    }
+    printf("\n");
+
+    unsigned char giaddr[4];
+    memcpy(giaddr, &buffer[24], 4);
+    printf("giaddr: ");
+    for (int i = 0; i < 4; i++) {
+      printf("%d.",giaddr[i]);
+    }
+    printf("\n");
+
+    unsigned char chaddr[16];
+    memcpy(chaddr, &buffer[28], 16);
+    printf("chaddr: 0x");
+    for (int i = 0; i < 16; i++) {
+      printf("%02x.",chaddr[i]);
+    }
+    printf("\n");
+
+    unsigned char sname[64];
+    memcpy(sname, &buffer[44], 64);
+    printf("sname: ");
+    for (int i = 0; i < 64; i++) {
+      printf("%c",sname[i]);
+    }
+    printf("\n");
+
+    unsigned char magic_cookie[4];
+    memcpy(sname, &buffer[236], 4);
+    printf("magic_cookie: ");
+    for (int i = 0; i < 4; i++) {
+      printf("%02x",magic_cookie[i]);
+    }
+    printf("\n");
+
+    unsigned char msg_type[4];    //option 53
+    memcpy(sname, &buffer[240], 3);
+    printf("magic_cookie: ");
+    for (int i = 0; i < 4; i++) {
+      printf("%02x",magic_cookie[i]);
+    }
+    printf("\n");
+
+    printf("ID \t|INT\t|CHAR\t|HEX\t|\n");
+    for (int i = 0; i < rcvd; i++) {
+      printf(" %4d| %4d\t| %4c\t| %02x\t\n",i , buffer[i], buffer[i], buffer[i]);
+    }
+    printf("--------------END----------\n");
+
+    if (strncmp((char*)buffer,"END.",4) == 0){    // "END." string exits application
+    	printf("closing socket\n");
+    	close(srv_socket);
+    	exit(0);
+    }
+    memset( buffer, 0 ,sizeof(buffer));
   }
-  //printf("Connection closed\n");
-}
-
-/**
-*   Handles communication between server and client
-*/
-void handle_communication(int server_socket)
-{
-  //cout<< "Hello server" << endl;
-  listen_wrapper(server_socket);
-
-  while(1)
-  {
-    int client_socket = get_new_client(server_socket);
-		{
-      int pid = fork_handler();
-      if (pid == 0){ //handle new connection inside new process
-        serve(client_socket);
-        close(client_socket);
-        exit(0);
-      }
-      else{
-        close(client_socket);
-      }
-         //parent
-		}
-	}
 }
 
 /**
@@ -134,7 +194,7 @@ void handle_communication(int server_socket)
 int get_socket()
 {
   int server_socket = 0;
-  if((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)  // creating socket
+  if((server_socket = socket(AF_INET, SOCK_DGRAM, 0)) < 0)  // creating socket
   {
     perror("SOCKERR");
     exit(EXIT_FAILURE);
@@ -155,14 +215,12 @@ void init_server(int port)
   sw.sin_addr.s_addr = INADDR_ANY; // setting properly destination ip address
   sw.sin_port = htons(port);              // set destination port
 
-  //bind network socket to socket file descriptor
-  int connection = 0;
-  if((connection = bind (server_socket, (struct sockaddr *)&sw, sizeof(struct sockaddr))) < 0 )
+  if(bind (server_socket, (struct sockaddr *)&sw, sizeof(struct sockaddr)) < 0 )
   {
     perror("CONNERR: socket");
     exit(EXIT_FAILURE);
   }
-  handle_communication(server_socket);
+  serve(server_socket);
 }
 
 /** TODO all args
@@ -175,6 +233,6 @@ int main(int argc, char const *argv[])
     exit(EXIT_SUCCESS);
   }
 
-  init_server((int)strtod(argv[2],NULL));
+  init_server(67);
   exit(0);
 }
