@@ -15,6 +15,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <limits.h>
 
 const int DHCP_NONE = 0;
 const int DHCP_DISCOVER = 1;

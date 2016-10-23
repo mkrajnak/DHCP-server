@@ -7,6 +7,47 @@
 #include "dserver.h"
 using namespace std;
 
+
+struct range{
+  unsigned char * address;         // address range from stdin
+  int cidr;               // prefix
+  unsigned char * server_address;  // server ip address
+  unsigned char * first_usable;    // first_usable ip address from diven range
+  unsigned char * mask;            // network_mask
+  unsigned char * broadcast;            // broadcast
+}range;
+
+/**
+* Parsing numeric values + error detection
+*/
+int check_num_args(char *arg)
+{
+   	char *white;
+   	int num = (int)strtod(arg,&white);
+   	if(strlen(white) != 0)
+   	{
+     	fprintf(stderr,"Unexpected input \"%s\"\n",white);
+     	exit(EXIT_FAILURE);
+   	}
+   	else
+   	  return num;   //no char detected, numeric value is returned
+}
+
+/*
+* INIT struct
+*/
+struct range * init(){
+  struct range * r =(struct range *) malloc(sizeof(struct range));
+  if (r == NULL) {
+    perror("could not allocate memmory");
+  }
+  r->address = NULL;
+  r->cidr = 0;
+  r->server_address = NULL;
+  r->first_usable = NULL;
+  r->mask = NULL;
+  return r;
+}
 /**
 * HELP
 */
@@ -165,7 +206,7 @@ void serve(int srv_socket)
     }
     printf("\n");
 
-    unsigned char msg_type[4];    //option 53
+    //unsigned char msg_type[4];    //option 53
     memcpy(sname, &buffer[240], 3);
     printf("magic_cookie: ");
     for (int i = 0; i < 4; i++) {
@@ -222,17 +263,118 @@ void init_server(int port)
   }
   serve(server_socket);
 }
-
-/** TODO all args
-* MAIN
+/*
+* check ip validity via inet_pton adn convert to binary ip
 */
-int main(int argc, char const *argv[])
+unsigned char * str_to_ip(char * addr){
+  unsigned char * buf = (unsigned char *) malloc(sizeof(struct in_addr));
+  if (buf == NULL) {
+    perror("Memmory alocation failure");
+  }
+  if ((inet_pton(AF_INET, addr, buf)) != 1) {
+     fprintf(stderr, "Entered ip address is not valid \n");
+     free(buf);
+     exit(EXIT_FAILURE);
+  }
+  return buf;
+}
+
+/*
+* convert binary ip address to string
+*/
+char * ip_to_str(unsigned char * addr){
+  char * buf = (char *) malloc(sizeof(struct in_addr));
+  if (buf == NULL) {
+    perror("Memmory alocation failure");
+  }
+  if (inet_ntop(AF_INET, addr, buf, INET6_ADDRSTRLEN) == NULL) {
+           perror("inet_ntop");
+           free(buf);
+           exit(EXIT_FAILURE);
+  }
+  return buf;
+}
+
+/*
+* len length of ip address range, also check for right format
+* @return index of / in range string
+*/
+int get_addr_len(char * addr){
+  for (unsigned int i = 0; i < strlen(addr) ; i++) {
+    if (addr[i] == '/') {
+      return i;
+    }
+  }
+  fprintf(stderr, "Specify network mask via cidr\n");
+  exit(EXIT_FAILURE);
+}
+
+/*
+* check arguments from stdin
+*/
+void check_args(int argc, char **argv, struct range *r)
 {
   if (argc == 2  && (strcmp(argv[1],"--help") == 0))  {
     help();
     exit(EXIT_SUCCESS);
   }
+  else if (argc == 3 && (strcmp(argv[1],"-p") == 0)) {
 
-  init_server(67);
-  exit(0);
+    int addr_len = get_addr_len(argv[2]);
+    char * addr = (char *) malloc(addr_len+1);
+    if ( addr == NULL) {
+      perror("Count not allocate memmory");
+    }
+    char prefix[2];
+    strncpy(addr, argv[2], addr_len);
+    strncpy(prefix, argv[2] + addr_len+1, 2);
+    r->cidr = check_num_args(prefix);
+    if (r->cidr <= 0 || r->cidr == 31 || r->cidr >= 32) {
+      fprintf(stderr, "Cannot operate with given CIDR range \n");
+      exit(EXIT_FAILURE);
+    }
+    r->address = str_to_ip(addr);
+
+    printf("%s\n", ip_to_str(r->address));
+    printf("%d\n", r->cidr );
+
+    // unsigned int broadcast = UINT_MAX;
+    // printf("MAX: %u\n",broadcast );
+    // broadcast = broadcast << r->cidr;
+    // printf("%u\n",broadcast );
+    // broadcast = ~ broadcast ;
+    // printf("%s\n",r->address );
+    // *(r->address) = *(r->address) | broadcast;
+    // printf("%s\n",r->address );
+    //
+    // printf("%s\n", ip_to_str(r->address) );
+
+
+    // r->broadcast = (unsigned char *) malloc(sizeof(struct in_addr));
+    // if (r->broadcast == NULL) {
+    //   perror("Memmory alocation failure");
+    // }
+    // *r->broadcast = htons(*r->address) + broadcast;
+
+  }
+  else{
+    perror("Unrecognized arguments\n");
+    exit(EXIT_FAILURE);
+  }
+
+
+  // ./dserver -p 192.168.0.0/24  [-e 192.168.0.1,192.168.0.2]
+  /** TODO -e
+  * MAIN
+  */
+}
+int main(int argc, char *argv[]){
+
+  struct range *r = init();
+  check_args(argc, argv, r);
+
+  free(r->address);
+  free(r);
+  //init_server(67);
+  exit(EXIT_SUCCESS);
 }
