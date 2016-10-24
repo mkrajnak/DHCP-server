@@ -11,8 +11,8 @@ using namespace std;
 struct range{
   struct in_addr * address;         // address range from stdin
   int cidr;               // prefix
-  unsigned char * server_address;  // server ip address
-  unsigned char * first_usable;    // first_usable ip address from diven range
+  char * server_address;  // server ip address
+  char * first_usable;    // first_usable ip address from diven range
   char * mask;            // network_mask
   char * broadcast;            // broadcast
 }range;
@@ -22,8 +22,9 @@ struct range{
 */
 int check_num_args(char *arg)
 {
-   	char *white;
-   	int num = (int)strtod(arg,&white);
+   	char *white = NULL;
+   	int num = 0;
+    num = (int) strtod(arg, &white);
    	if(strlen(white) != 0)
    	{
      	fprintf(stderr,"Unexpected input \"%s\"\n",white);
@@ -37,7 +38,8 @@ int check_num_args(char *arg)
 * INIT struct
 */
 struct range * init(){
-  struct range * r =(struct range *) malloc(sizeof(struct range));
+  struct range * r = NULL;
+  r =(struct range *) malloc(sizeof(struct range));
   if (r == NULL) {
     perror("could not allocate memmory");
   }
@@ -47,6 +49,15 @@ struct range * init(){
   r->first_usable = NULL;
   r->mask = NULL;
   return r;
+}
+
+void destroy(struct range *r){
+  free(r->address);
+  free(r->server_address);
+  free(r->first_usable);
+  free(r->broadcast);
+  free(r->mask);
+  free(r);
 }
 /**
 * HELP
@@ -268,7 +279,8 @@ void init_server(int port)
 * convert binary ip address to string
 */
 char * ip_to_str(struct in_addr * addr){
-  char * buf = (char *) malloc(sizeof(struct in_addr));
+  char * buf = NULL;
+  buf = (char *) malloc(INET_ADDRSTRLEN);
   if (buf == NULL) {
     perror("Memmory alocation failure");
   }
@@ -283,7 +295,8 @@ char * ip_to_str(struct in_addr * addr){
 * check ip validity via inet_pton adn convert to binary ip
 */
 struct in_addr * str_to_ip(const char * addr){
-  struct in_addr * buf = (struct in_addr *) malloc(sizeof(struct in_addr));
+  struct in_addr * buf = NULL;
+  buf = (struct in_addr *) malloc(sizeof(struct in_addr));
   if (buf == NULL) {
     perror("Memmory alocation failure");
   }
@@ -315,7 +328,8 @@ void parse_reserved(char * list) {
   unsigned int len = strlen(list);
   for (unsigned int i = 0; i < len ; i++) {
     if (list[i] == ',' || i == len - 1){
-      char * buf = (char *) malloc(sizeof(struct in_addr));
+      char * buf = NULL;
+      buf = (char *) malloc(sizeof(struct in_addr));
       if (buf == NULL) {
         perror("Memmory alocation failure");
       }
@@ -338,20 +352,22 @@ void check_args(int argc, char **argv, struct range *r)
   if (argc >= 3 && (strcmp(argv[1],"-p") == 0)) {
 
     int addr_len = get_addr_len(argv[2]);
-    int prefix_len = strlen(argv[2]) - addr_len -1;
+    int prefix_len = strlen(argv[2]) - addr_len;
 
-    char * addr = (char *) malloc(addr_len+1);
+    char * addr = NULL;
+    addr = (char *)(malloc(addr_len + 1));
     if ( addr == NULL) {
       perror("Count not allocate memmory");
     }
-    char * prefix = (char *) malloc(strlen(argv[2]) - addr_len -1);
-    if ( addr == NULL) {
+    char * prefix = NULL;
+    prefix = (char *)(malloc(prefix_len));
+    if ( prefix == NULL) {
       perror("Count not allocate memmory");
     }
     printf("Len: %d\tPref:%d\n",addr_len, prefix_len );
 
-    strncpy(addr, argv[2], addr_len);
-    strncpy(prefix, &argv[2][addr_len +1] , prefix_len);
+    memcpy(addr, argv[2], addr_len);
+    memcpy(prefix, &argv[2][addr_len +1] , prefix_len);
     printf("Prf: %s\n",prefix );
     r->cidr = check_num_args(prefix);
     if (r->cidr <= 0 || r->cidr == 31 || r->cidr >= 32) {
@@ -368,26 +384,31 @@ void check_args(int argc, char **argv, struct range *r)
     }
 
     printf("%u\n", r->address->s_addr);
-    printf("%s\n", ip_to_str(r->address));
+    //printf("%s\n", ip_to_str(r->address));
     printf("%d\n", r->cidr );
 
     string b_ip = "255.255.255.255";
     const char * cb_ip = b_ip.c_str();
 
-    struct in_addr * broadcast = str_to_ip(cb_ip);
-    printf("%s\n", ip_to_str(broadcast));
+    struct in_addr * broadcast  = NULL;
+    broadcast = str_to_ip(cb_ip);
+    //printf("%s\n", ip_to_str(broadcast));
     broadcast->s_addr = broadcast->s_addr >> r->cidr; //switch right
-    printf("%s\n", ip_to_str(broadcast));
+    //printf("%s\n", ip_to_str(broadcast));
     broadcast->s_addr = ntohl(broadcast->s_addr);     // convert byte order
-    printf("%s\n", ip_to_str(broadcast));
+    //printf("%s\n", ip_to_str(broadcast));
     broadcast->s_addr = ~broadcast->s_addr;           //invert
     r->mask = ip_to_str(broadcast);
-    printf("Mask: %s\n", r->mask);
+    //printf("Mask: %s\n", r->mask);
 
     broadcast->s_addr = ~broadcast->s_addr;
     broadcast->s_addr = r->address->s_addr | broadcast->s_addr;
     r->broadcast = ip_to_str(broadcast);
     printf("%s\n", r->broadcast);
+
+    free(broadcast);
+    free(addr);
+    free(prefix);
 
     if (argc ==4) {
       fprintf(stderr, "Missing list of ip address\n" );
@@ -413,8 +434,7 @@ int main(int argc, char *argv[]){
   struct range *r = init();
   check_args(argc, argv, r);
 
-  free(r->address);
-  free(r);
+  destroy(r);
   //init_server(67);
   exit(EXIT_SUCCESS);
 }
