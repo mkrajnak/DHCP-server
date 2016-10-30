@@ -37,5 +37,6 @@ void handle_communication(int server_socket);
 void init_server(int port);
 void serve(int client_socket);
 int get_socket();
+void handle_rqst(int rcvd, unsigned char * buffer);
 
 #endif
