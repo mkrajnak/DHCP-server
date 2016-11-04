@@ -68,8 +68,8 @@ void help()
   printf("DHCP server implemented by Martin Krajnak <xkrajn02@stud.fit.vutbr.cz>:\n"
         "Usage:\t ./dserver -p 192.168.0.0/24 [-e 192.168.0.1,192.168.0.2]\n"
         "\t\t./dserver -p 192.168.0.0/24 -s static.txt\n"
-        "\t -p <ip_address/mask> ip addess range\n"
-        "\t -e <ip_address/mask> reserved ip addresses which are not allowed to\n"
+        "\t -p <ip_address/mask> is network ip addess representing range\n"
+        "\t -e [ip_addresses] are reserved ip addresses which are not allowed to\n"
         "be provided to clients, separated by comma \n"
       );
 }
@@ -108,8 +108,6 @@ void send_msg(unsigned char * buffer){
 
 }
 
-
-
 /**
 * Communicate with client
 * Messages DISCOVER, OFFER, REQUEST, ACK, NACK, RELEASE
@@ -125,34 +123,68 @@ void serve(int srv_socket)
   int rcvd = 0; // recieved data
   while ((rcvd = recvfrom(srv_socket, buffer, BUFSIZE, 0, (struct sockaddr *)&client, &length)) >= 0)
   {
-    printf("Request received from %s, port %d\n",inet_ntoa(client.sin_addr),ntohs(client.sin_port));
+    printf("Discover received from %s, port %d\n",inet_ntoa(client.sin_addr),ntohs(client.sin_port));
     printf("Message:\n");// \"%d\":end\n", buffer[0]);
 
-    handle_rqst(rcvd, buffer);
+    handle_discover(rcvd, buffer);
 
-    unsigned char yaddr[4];
-    yaddr[0] = (int) 192;
-    yaddr[1] = (int) 168;
-    yaddr[2] = (int) 0;
-    yaddr[3] = (int) 150;
-    memcpy(&buffer[16], yaddr, 4);
-    printf("yaddr: ");
-    for (int i = 0; i < 4; i++) {
-      printf("%d.",yaddr[i]);
-    }
-    printf("\n");
-    buffer[0] = (int) 0;
-    buffer[242] = (int) 2;
+    prepare_offer(buffer);
+
     send_msg(buffer);
     memset( buffer, 0 ,sizeof(buffer));
   }
   close(srv_socket);
 }
 
+void prepare_offer(unsigned char * buffer)
+{
+  unsigned char yaddr[4];
+  yaddr[0] = (int) 192;
+  yaddr[1] = (int) 168;
+  yaddr[2] = (int) 0;
+  yaddr[3] = (int) 150;
+  memcpy(&buffer[16], yaddr, 4);
+  debug_field_int("yaddr :", yaddr, sizeof(yaddr));
+
+  unsigned char siaddr[4];
+  siaddr[0] = (int) 192;
+  siaddr[1] = (int) 168;
+  siaddr[2] = (int) 0;
+  siaddr[3] = (int) 1;
+
+  memcpy(siaddr, &buffer[20], 4);
+  debug_field_int("siaddr :", siaddr, sizeof(siaddr));
+
+  buffer[0] = (int) 2;
+  buffer[242] = (int) 2;
+
+  buffer[243] = (int) 1;
+  buffer[244] = (int) 4;
+
+  buffer[245] = (int) 255;
+  buffer[246] = (int) 255;
+  buffer[247] = (int) 255;
+  buffer[248] = (int) 0;
+
+  buffer[249] = (int) 54;
+  buffer[250] = (int) 4;
+
+  buffer[251] = (int) 192;
+  buffer[252] = (int) 168;
+  buffer[253] = (int) 1;
+  buffer[254] = (int) 63;
+
+  buffer[255] = (int) 255;
+
+  bzero(&buffer[256],511-255);
+  debug_buffer(buffer, 512);
+}
+
+
 /**
-*
+* receive and parse dhcp packet
 */
-void handle_rqst(int rcvd, unsigned char * buffer){
+void handle_discover(int rcvd, unsigned char * buffer){
 
   int op = buffer[0];         // Request 1, Reply 2
   int h_type = buffer[1];
@@ -166,101 +198,79 @@ void handle_rqst(int rcvd, unsigned char * buffer){
 
   unsigned char xid[4];
   memcpy(xid, &buffer[4], 4);
-  printf("Xid: 0x");
-  for (int i = 0; i < 4; i++) {
-    printf("%02x", xid[i]);
-  }
-  printf("\n");
+  debug_field_hex("xid :0x", xid, sizeof(xid));
 
   unsigned char secs[2];
   memcpy(secs, &buffer[8], 2);
-  for (int i = 0; i < 2; i++) {
-    printf("%02x", secs[i]);
-  }
-  printf("\n");
+  debug_field_int("secs :", secs, sizeof(secs));
 
   unsigned char flags[2];
   memcpy(flags, &buffer[10], 2);
-  for (int i = 0; i < 2; i++) {
-    printf("%02x", flags[i]);
-  }
-  printf("\n");
+  debug_field_int("flags :", flags, sizeof(flags));
 
   unsigned char ciadr[4];
   memcpy(ciadr, &buffer[12], 4);
-  printf("ciadr: ");
-  for (int i = 0; i < 4; i++) {
-    printf("%d.", ciadr[i]);
-  }
-  printf("\n");
+  debug_field_int("ciadr :", ciadr, sizeof(ciadr));
 
   unsigned char yaddr[4];
   memcpy(yaddr, &buffer[16], 4);
-  printf("yaddr: ");
-  for (int i = 0; i < 4; i++) {
-    printf("%d.",yaddr[i]);
-  }
-  printf("\n");
+  debug_field_int("yaddr :", yaddr, sizeof(yaddr));
 
   unsigned char siaddr[4];
   memcpy(siaddr, &buffer[20], 4);
-  printf("siaddr: ");
-  for (int i = 0; i < 4; i++) {
-    printf("%d.",siaddr[i]);
-  }
-  printf("\n");
+  debug_field_int("siaddr :", siaddr, sizeof(siaddr));
 
   unsigned char giaddr[4];
   memcpy(giaddr, &buffer[24], 4);
-  printf("giaddr: ");
-  for (int i = 0; i < 4; i++) {
-    printf("%d.",giaddr[i]);
-  }
-  printf("\n");
+  debug_field_int("giaddr :", giaddr, sizeof(giaddr));
 
   unsigned char chaddr[16];
   memcpy(chaddr, &buffer[28], 16);
-  printf("chaddr: 0x");
-  for (int i = 0; i < 16; i++) {
-    printf("%02x.",chaddr[i]);
-  }
-  printf("\n");
+  debug_field_hex("chaddr :0x", chaddr, sizeof(chaddr));
 
   unsigned char sname[64];
   memcpy(sname, &buffer[44], 64);
-  printf("sname: ");
-  for (int i = 0; i < 64; i++) {
-    printf("%c",sname[i]);
-  }
-  printf("\n");
+  printf("sname: %s\n", sname);
 
   unsigned char magic_cookie[4];
-  memcpy(sname, &buffer[236], 4);
-  printf("magic_cookie: ");
-  for (int i = 0; i < 4; i++) {
-    printf("%02x",magic_cookie[i]);
-  }
-  printf("\n");
+  memcpy(magic_cookie, &buffer[236], 4);
+  debug_field_hex("magic_cookie: ", magic_cookie, sizeof(magic_cookie));
 
-  //unsigned char msg_type[4];    //option 53
-  memcpy(sname, &buffer[240], 3);
-  printf("magic_cookie: ");
-  for (int i = 0; i < 4; i++) {
-    printf("%02x",magic_cookie[i]);
-  }
-  printf("\n");
-
-  printf("ID \t|INT\t|CHAR\t|HEX\t|\n");
-  for (int i = 0; i < rcvd; i++) {
-    printf(" %4d| %4d\t| %4c\t| %02x\t\n",i , buffer[i], buffer[i], buffer[i]);
-  }
-  printf("--------------END----------\n");
+  debug_buffer(buffer, rcvd);
 
   if (strncmp((char*)buffer,"END.",4) == 0){    // "END." string exits application
     printf("closing socket\n");
     return;
   }
 }
+
+void debug_field_int(const char * intro, unsigned char * field, int len)
+{
+  printf("%s", intro);
+  for (int i = 0; i < len; i++) {
+    printf("%d ",field[i]);
+  }
+  printf("\n");
+}
+
+void debug_field_hex(const char * intro, unsigned char * field, int len)
+{
+  printf("%s", intro);
+  for (int i = 0; i < len; i++) {
+    printf("%02x ",field[i]);
+  }
+  printf("\n");
+}
+
+void debug_buffer(unsigned char * buffer, int rcvd)
+{
+  printf("ID \t|INT\t|CHAR\t|HEX\t|\n");
+  for (int i = 0; i < rcvd; i++) {
+    printf(" %4d| %4d\t| %4c\t| %02x\t\n",i , buffer[i], buffer[i], buffer[i]);
+  }
+  printf("--------------END----------\n");
+}
+
 /**
 * Try to get socket
 */
@@ -312,6 +322,7 @@ char * ip_to_str(struct in_addr * addr){
   }
   return buf;
 }
+
 /*
 * check ip validity via inet_pton adn convert to binary ip
 */

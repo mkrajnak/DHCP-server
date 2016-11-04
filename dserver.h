@@ -37,6 +37,9 @@ void handle_communication(int server_socket);
 void init_server(int port);
 void serve(int client_socket);
 int get_socket();
-void handle_rqst(int rcvd, unsigned char * buffer);
-
+void prepare_offer(unsigned char * buffer);
+void handle_discover(int rcvd, unsigned char * buffer);
+void debug_buffer(unsigned char * buffer, int rcvd);
+void debug_field_hex(const char * intro, unsigned char * field, int len);
+void debug_field_int(const char * intro, unsigned char * field, int len);
 #endif
