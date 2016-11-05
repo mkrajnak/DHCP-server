@@ -9,11 +9,13 @@ using namespace std;
 
 struct range{
   struct in_addr * address;         // address range from stdin
-  int cidr;               // prefix
-  uint32_t server_address;  // server ip address
-  uint32_t next_usable;    // first_usable ip address from diven range
-  uint32_t mask;            // network_mask
-  uint32_t broadcast;            // broadcast
+  int cidr;                         // prefix
+  uint32_t server_address;          // server ip address
+  uint32_t next_usable;             // first_usable ip address from diven range
+  uint32_t mask;                    // network_mask
+  uint32_t broadcast;               // broadcast
+  vector <string> restricted;
+  vector <string> leased_list;
 }range;
 
 /*
@@ -40,12 +42,17 @@ void destroy(struct range *r){
 }
 
 void debug_range(struct range *r){
-  printf("Address: \t%s\n", ip_to_str(r->address));
-  printf("Cidr: \t%d\n", r->cidr );
+  printf("Address: %s/%d\n", ip_to_str(r->address), r->cidr);
   printf("My address: %s\n", uint32_t_to_str(r->server_address));
   printf("Whos next?: %s\n", uint32_t_to_str(r->next_usable));
-  printf("%s\n", uint32_t_to_str(r->server_address));
-  printf("%s\n", uint32_t_to_str(r->server_address));
+  printf("Mask: %s\n", uint32_t_to_str(r->mask));
+  printf("Broadcast: %s\n", uint32_t_to_str(r->broadcast));
+
+  std::cout << "Vector" << std::endl;
+  for (auto & element : r->restricted) {
+    cout  << element << endl;
+  }
+  std::cout << "End" << std::endl;
 }
 
 /**
@@ -172,23 +179,25 @@ void rewrite_ip_address(unsigned char *buffer, uint32_t ip){
 
 void prepare_offer(unsigned char * buffer)
 {
+  r->leased_list.push_back(uint32_t_to_str(r->next_usable));
+  printf("Leasing %s\n",uint32_t_to_str(r->next_usable) );
   rewrite_ip_address(&buffer[16], r->next_usable);
+  r->next_usable = increment_ip_address(r->next_usable);
+
   rewrite_ip_address(&buffer[20], r->server_address);
 
-  buffer[0] = (int) 2;
-  buffer[242] = (int) 2;
+  buffer[0] = (int) 2;      // msg type to reply
+  buffer[242] = (int) 2;    // msg type to offer
 
-  buffer[243] = (int) 1;
-  buffer[244] = (int) 4;
-
+  buffer[243] = (int) 1;    // option id
+  buffer[244] = (int) 4;    // size in Bytes
   rewrite_ip_address(&buffer[245], r->mask);
 
   buffer[249] = (int) 54;
   buffer[250] = (int) 4;
+  rewrite_ip_address(&buffer[251], r->server_address);
 
-  rewrite_ip_address(&buffer[245], r->server_address);
-
-  buffer[255] = (int) 51;
+  buffer[255] = (int) 51;   // lease time
   buffer[256] = (int) 4;
 
   buffer[257] = (int) 0;
@@ -196,10 +205,10 @@ void prepare_offer(unsigned char * buffer)
   buffer[259] = (int) 0x0e;
   buffer[260] = (int) 0x10;
 
-  buffer[261] = (int) 255;
+  buffer[261] = (int) 255;  //end
 
-  bzero(&buffer[262],511-262);
-  debug_buffer(buffer, 512);
+  bzero(&buffer[262],511-262);  //make sure garbage is deleted
+  //debug_buffer(buffer, 512);
 }
 
 
@@ -258,7 +267,7 @@ void handle_discover(int rcvd, unsigned char * buffer){
   memcpy(magic_cookie, &buffer[236], 4);
   debug_field_hex("magic_cookie: ", magic_cookie, sizeof(magic_cookie));
 
-  debug_buffer(buffer, rcvd);
+  //debug_buffer(buffer, rcvd);
 
   if (strncmp((char*)buffer,"END.",4) == 0){    // "END." string exits application
     printf("closing socket\n");
@@ -379,17 +388,20 @@ int get_addr_len(char * addr){
 void parse_reserved(char * list) {
   printf("%s\n",list );
   int tmp = 0;
-  unsigned int len = strlen(list);
-  for (unsigned int i = 0; i < len ; i++) {
-    if (list[i] == ',' || i == len - 1){
-      char * buf = NULL;
-      buf = (char *) malloc(sizeof(struct in_addr));
-      if (buf == NULL) {
-        perror("Memmory alocation failure");
-      }
-      strncpy(buf, &list[tmp] , i);
+  int len = strlen(list);
+  char buf[16];
+
+  for (int i = 0; i < len ; i++) {
+    if (list[i] == ',' ){
+      bzero(buf, sizeof(buf));
+      strncpy(buf, &list[tmp] , i-tmp);
       tmp = i + 1;
-      printf("%s\n",buf );
+      r->restricted.push_back(string(buf));
+    }
+    else if(i == len - 1){
+      bzero(buf, sizeof(buf));
+      strncpy(buf, &list[tmp] , i-tmp+1);
+      r->restricted.push_back(string(buf));
     }
   }
 }
@@ -475,9 +487,9 @@ void check_args(int argc, char **argv, struct range *r)
       fprintf(stderr, "Missing list of ip address\n" );
       exit(EXIT_FAILURE);
     }
-    // if ((argc >= 5  && (strcmp(argv[3],"-e") == 0))) {
-    //   parse_reserved(argv[4]);
-    // }
+    if ((argc >= 5  && (strcmp(argv[3],"-e") == 0))) {
+      parse_reserved(argv[4]);
+    }
   }
   else{
     perror("Unrecognized arguments\n");

@@ -45,8 +45,10 @@ int get_socket();
 void send_ack(unsigned char * buffer, int rcvd);
 void send_offer(unsigned char * buffer, int rcvd);
 void prepare_offer(unsigned char * buffer);
+void rewrite_ip_address(unsigned char *buffer, uint32_t ip);
 void prepare_ack(unsigned char *buffer);
 void handle_discover(int rcvd, unsigned char * buffer);
+uint32_t increment_ip_address(uint32_t add);
 
 void debug_range(struct range *r);
 void debug_buffer(unsigned char * buffer, int rcvd);
