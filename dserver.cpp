@@ -36,9 +36,12 @@ struct range * init(){
   return r;
 }
 
-void destroy(struct range *r){
+void destroy(int sig){
   free(r->address);
   free(r);
+
+  signal(sig, SIG_IGN);
+  exit(EXIT_SUCCESS);
 }
 
 void debug_range(struct range *r){
@@ -386,7 +389,6 @@ int get_addr_len(char * addr){
 }
 
 void parse_reserved(char * list) {
-  printf("%s\n",list );
   int tmp = 0;
   int len = strlen(list);
   char buf[16];
@@ -439,12 +441,12 @@ void check_args(int argc, char **argv, struct range *r)
     if ( prefix == NULL) {
       perror("Count not allocate memmory");
     }
-    printf("Len: %d\tPref:%d\n",addr_len, prefix_len );
+    //printf("Len: %d\tPref:%d\n",addr_len, prefix_len );
 
     memcpy(addr, argv[2], addr_len);
     memcpy(prefix, &argv[2][addr_len +1] , prefix_len);
-    printf("Prf: %s\n",prefix );
-    printf("add %s\n",addr );
+    // printf("Prf: %s\n",prefix );
+    // printf("add %s\n",addr );
 
     r->cidr = check_num_args(prefix);
     if (r->cidr <= 0 || r->cidr == 31 || r->cidr >= 32) {
@@ -452,7 +454,7 @@ void check_args(int argc, char **argv, struct range *r)
       exit(EXIT_FAILURE);
     }
     r->address = str_to_ip(addr);
-    printf("%u\n", r->address->s_addr );
+    //printf("%u\n", r->address->s_addr );
 
     int test_range = 0;
     test_range = r->address->s_addr >> r->cidr;
@@ -462,8 +464,7 @@ void check_args(int argc, char **argv, struct range *r)
     }
     r->server_address = increment_ip_address(r->address->s_addr);
     r->next_usable = increment_ip_address(r->server_address);
-    printf("%u\n",r->server_address );
-
+    //printf("%u\n",r->server_address );
 
     string b_ip = "255.255.255.255";
     const char * cb_ip = b_ip.c_str();
@@ -503,14 +504,11 @@ void check_args(int argc, char **argv, struct range *r)
 */
 int main(int argc, char *argv[]){
 
-  string hello = "hey";
-  cout << hello << endl;
+  signal(SIGINT, destroy);
 
   r = init();
   check_args(argc, argv, r);
   debug_range(r);
 
   init_server(67);
-  destroy(r);
-  exit(EXIT_SUCCESS);
 }
