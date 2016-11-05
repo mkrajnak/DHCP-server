@@ -7,14 +7,13 @@
 #include "dserver.h"
 using namespace std;
 
-
 struct range{
   struct in_addr * address;         // address range from stdin
   int cidr;               // prefix
-  char * server_address;  // server ip address
-  char * first_usable;    // first_usable ip address from diven range
-  char * mask;            // network_mask
-  char * broadcast;            // broadcast
+  uint32_t server_address;  // server ip address
+  uint32_t next_usable;    // first_usable ip address from diven range
+  uint32_t mask;            // network_mask
+  uint32_t broadcast;            // broadcast
 }range;
 
 /*
@@ -28,21 +27,27 @@ struct range * init(){
   }
   r->address = NULL;
   r->cidr = 0;
-  r->server_address = NULL;
-  r->first_usable = NULL;
-  r->mask = NULL;
-  r->broadcast = NULL;
+  r->server_address = 0;
+  r->next_usable = 0;
+  r->mask = 0;
+  r->broadcast = 0;
   return r;
 }
 
 void destroy(struct range *r){
   free(r->address);
-  free(r->server_address);
-  free(r->first_usable);
-  free(r->broadcast);
-  free(r->mask);
   free(r);
 }
+
+void debug_range(struct range *r){
+  printf("Address: \t%s\n", ip_to_str(r->address));
+  printf("Cidr: \t%d\n", r->cidr );
+  printf("My address: %s\n", uint32_t_to_str(r->server_address));
+  printf("Whos next?: %s\n", uint32_t_to_str(r->next_usable));
+  printf("%s\n", uint32_t_to_str(r->server_address));
+  printf("%s\n", uint32_t_to_str(r->server_address));
+}
+
 /**
 * Parsing numeric values + error detection
 */
@@ -126,34 +131,49 @@ void serve(int srv_socket)
     printf("Discover received from %s, port %d\n",inet_ntoa(client.sin_addr),ntohs(client.sin_port));
     printf("Message:\n");// \"%d\":end\n", buffer[0]);
 
-    handle_discover(rcvd, buffer);
+    switch (buffer[242]) {
+      case (int) 1:
+        send_offer(buffer, rcvd);
+        break;
+      case (int) 3:
+        send_ack(buffer, rcvd);
+        break;
+    }
 
-    prepare_offer(buffer);
-
-    send_msg(buffer);
     memset( buffer, 0 ,sizeof(buffer));
   }
   close(srv_socket);
 }
 
+void send_offer(unsigned char * buffer, int rcvd){
+
+  handle_discover(rcvd, buffer);
+  prepare_offer(buffer);
+  send_msg(buffer);
+}
+
+void send_ack(unsigned char * buffer, int rcvd){
+
+  handle_discover(rcvd, buffer);
+  prepare_ack(buffer);
+  send_msg(buffer);
+}
+
+void prepare_ack(unsigned char *buffer){
+  prepare_offer(buffer);
+  buffer[242] = (int) 5;
+}
+
+void rewrite_ip_address(unsigned char *buffer, uint32_t ip){
+  for (int i = 0; i < 4; i++) {
+    buffer[i] = (ip >> (i*8)) & 0xFF;
+  }
+}
+
 void prepare_offer(unsigned char * buffer)
 {
-  unsigned char yaddr[4];
-  yaddr[0] = (int) 192;
-  yaddr[1] = (int) 168;
-  yaddr[2] = (int) 0;
-  yaddr[3] = (int) 150;
-  memcpy(&buffer[16], yaddr, 4);
-  debug_field_int("yaddr :", yaddr, sizeof(yaddr));
-
-  unsigned char siaddr[4];
-  siaddr[0] = (int) 192;
-  siaddr[1] = (int) 168;
-  siaddr[2] = (int) 0;
-  siaddr[3] = (int) 1;
-
-  memcpy(siaddr, &buffer[20], 4);
-  debug_field_int("siaddr :", siaddr, sizeof(siaddr));
+  rewrite_ip_address(&buffer[16], r->next_usable);
+  rewrite_ip_address(&buffer[20], r->server_address);
 
   buffer[0] = (int) 2;
   buffer[242] = (int) 2;
@@ -161,22 +181,24 @@ void prepare_offer(unsigned char * buffer)
   buffer[243] = (int) 1;
   buffer[244] = (int) 4;
 
-  buffer[245] = (int) 255;
-  buffer[246] = (int) 255;
-  buffer[247] = (int) 255;
-  buffer[248] = (int) 0;
+  rewrite_ip_address(&buffer[245], r->mask);
 
   buffer[249] = (int) 54;
   buffer[250] = (int) 4;
 
-  buffer[251] = (int) 192;
-  buffer[252] = (int) 168;
-  buffer[253] = (int) 1;
-  buffer[254] = (int) 63;
+  rewrite_ip_address(&buffer[245], r->server_address);
 
-  buffer[255] = (int) 255;
+  buffer[255] = (int) 51;
+  buffer[256] = (int) 4;
 
-  bzero(&buffer[256],511-255);
+  buffer[257] = (int) 0;
+  buffer[258] = (int) 0;
+  buffer[259] = (int) 0x0e;
+  buffer[260] = (int) 0x10;
+
+  buffer[261] = (int) 255;
+
+  bzero(&buffer[262],511-262);
   debug_buffer(buffer, 512);
 }
 
@@ -372,6 +394,15 @@ void parse_reserved(char * list) {
   }
 }
 
+char * uint32_t_to_str(uint32_t ip) {
+    struct in_addr ip_addr;
+    ip_addr.s_addr = ip;
+    return inet_ntoa(ip_addr);
+}
+
+uint32_t increment_ip_address(uint32_t add){
+  return htonl(htonl(add)+1);
+}
 /*
 * check arguments from stdin
 */
@@ -401,6 +432,7 @@ void check_args(int argc, char **argv, struct range *r)
     memcpy(addr, argv[2], addr_len);
     memcpy(prefix, &argv[2][addr_len +1] , prefix_len);
     printf("Prf: %s\n",prefix );
+    printf("add %s\n",addr );
 
     r->cidr = check_num_args(prefix);
     if (r->cidr <= 0 || r->cidr == 31 || r->cidr >= 32) {
@@ -408,6 +440,7 @@ void check_args(int argc, char **argv, struct range *r)
       exit(EXIT_FAILURE);
     }
     r->address = str_to_ip(addr);
+    printf("%u\n", r->address->s_addr );
 
     int test_range = 0;
     test_range = r->address->s_addr >> r->cidr;
@@ -415,29 +448,24 @@ void check_args(int argc, char **argv, struct range *r)
       fprintf(stderr, "Provided range is not valid.\n" );
       exit(EXIT_FAILURE);
     }
+    r->server_address = increment_ip_address(r->address->s_addr);
+    r->next_usable = increment_ip_address(r->server_address);
+    printf("%u\n",r->server_address );
 
-    printf("%u\n", r->address->s_addr);
-    //printf("%s\n", ip_to_str(r->address));
-    printf("%d\n", r->cidr );
 
     string b_ip = "255.255.255.255";
     const char * cb_ip = b_ip.c_str();
 
     struct in_addr * broadcast  = NULL;
     broadcast = str_to_ip(cb_ip);
-    //printf("%s\n", ip_to_str(broadcast));
     broadcast->s_addr = broadcast->s_addr >> r->cidr; //switch right
-    //printf("%s\n", ip_to_str(broadcast));
     broadcast->s_addr = ntohl(broadcast->s_addr);     // convert byte order
-    //printf("%s\n", ip_to_str(broadcast));
     broadcast->s_addr = ~broadcast->s_addr;           //invert
-    r->mask = ip_to_str(broadcast);
-    //printf("Mask: %s\n", r->mask);
+    r->mask = broadcast->s_addr;
 
     broadcast->s_addr = ~broadcast->s_addr;
     broadcast->s_addr = r->address->s_addr | broadcast->s_addr;
-    r->broadcast = ip_to_str(broadcast);
-    printf("%s\n", r->broadcast);
+    r->broadcast = broadcast->s_addr;
 
     free(broadcast);
     free(addr);
@@ -455,22 +483,22 @@ void check_args(int argc, char **argv, struct range *r)
     perror("Unrecognized arguments\n");
     exit(EXIT_FAILURE);
   }
-
-
-  // ./dserver -p 192.168.0.0/24  [-e 192.168.0.1,192.168.0.2]
-  /** TODO -e
-  * MAIN
-  */
 }
+
+// ./dserver -p 192.168.0.0/24  [-e 192.168.0.1,192.168.0.2]
+/** TODO -e
+* MAIN
+*/
 int main(int argc, char *argv[]){
 
   string hello = "hey";
   cout << hello << endl;
 
-  struct range *r = init();
+  r = init();
   check_args(argc, argv, r);
+  debug_range(r);
 
-  destroy(r);
   init_server(67);
+  destroy(r);
   exit(EXIT_SUCCESS);
 }
