@@ -16,7 +16,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <limits.h>
-#include  <signal.h>
+#include <signal.h>
+#include <time.h>
 
 const int DHCP_NONE = 0;
 const int DHCP_DISCOVER = 1;
@@ -50,6 +51,7 @@ void rewrite_ip_address(unsigned char *buffer, uint32_t ip);
 void prepare_ack(unsigned char *buffer);
 void handle_discover(int rcvd, unsigned char * buffer);
 uint32_t increment_ip_address(uint32_t add);
+char * get_client_mac_address(unsigned char *buffer);
 
 void debug_range(struct range *r);
 void debug_buffer(unsigned char * buffer, int rcvd);

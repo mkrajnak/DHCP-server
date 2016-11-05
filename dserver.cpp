@@ -180,12 +180,32 @@ void rewrite_ip_address(unsigned char *buffer, uint32_t ip){
   }
 }
 
+void print_lease(unsigned char *buffer, uint32_t addr){
+  unsigned char chaddr[16];
+  memcpy(chaddr, &buffer[28], 16);
+
+  //2016-09-29_13:45
+  time_t rawtime;
+  struct tm * timeinfo;
+  char ct_buffer[20];      // current time buffer
+  char lt_buffer[20];      // lease end
+
+  time (&rawtime);
+  timeinfo = localtime (&rawtime);
+  strftime (ct_buffer,20,"%F_%R",timeinfo);
+
+  timeinfo->tm_hour +=1;
+  strftime (lt_buffer,20,"%F_%R",timeinfo);
+  printf("%s %s %s %s\n", chaddr, uint32_t_to_str(addr), ct_buffer, lt_buffer);
+}
+
 void prepare_offer(unsigned char * buffer)
 {
   r->leased_list.push_back(uint32_t_to_str(r->next_usable));
-  printf("Leasing %s\n",uint32_t_to_str(r->next_usable) );
-  rewrite_ip_address(&buffer[16], r->next_usable);
-  r->next_usable = increment_ip_address(r->next_usable);
+  print_lease(buffer, r->next_usable);
+
+  rewrite_ip_address(&buffer[16], r->next_usable);          //write ip to buffer
+  r->next_usable = increment_ip_address(r->next_usable);    // increment ip add
 
   rewrite_ip_address(&buffer[20], r->server_address);
 
@@ -196,7 +216,7 @@ void prepare_offer(unsigned char * buffer)
   buffer[244] = (int) 4;    // size in Bytes
   rewrite_ip_address(&buffer[245], r->mask);
 
-  buffer[249] = (int) 54;
+  buffer[249] = (int) 54;   // next server ip
   buffer[250] = (int) 4;
   rewrite_ip_address(&buffer[251], r->server_address);
 
