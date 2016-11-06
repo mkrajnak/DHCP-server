@@ -4,17 +4,26 @@
 * Mail:   xkrajn02@stud.fit.vutbr.cz
 * Date:   2.10.2016
 */
+
 #include "dserver.h"
 using namespace std;
 
+struct lease_item{
+  uint32_t mac_addr;
+  uint32_t ip_addr;
+  struct tm *lease_end;
+
+}lease_item;
+
 struct range{
-  struct in_addr * address;         // address range from stdin
+  uint32_t network;         // address range from stdin
   int cidr;                         // prefix
   uint32_t server_address;          // server ip address
   uint32_t next_usable;             // first_usable ip address from diven range
   uint32_t mask;                    // network_mask
   uint32_t broadcast;               // broadcast
-  vector <string> restricted;
+  vector <uint32_t> restricted;
+  vector <uint32_t> pool;
   vector <string> leased_list;
 }range;
 
@@ -27,7 +36,7 @@ struct range * init(){
   if (r == NULL) {
     perror("could not allocate memmory");
   }
-  r->address = NULL;
+  r->network = 0;
   r->cidr = 0;
   r->server_address = 0;
   r->next_usable = 0;
@@ -37,7 +46,6 @@ struct range * init(){
 }
 
 void destroy(int sig){
-  free(r->address);
   free(r);
 
   signal(sig, SIG_IGN);
@@ -45,7 +53,7 @@ void destroy(int sig){
 }
 
 void debug_range(struct range *r){
-  printf("Address: %s/%d\n", ip_to_str(r->address), r->cidr);
+  printf("Address: %s/%d\n", uint32_t_to_str(r->network), r->cidr);
   printf("My address: %s\n", uint32_t_to_str(r->server_address));
   printf("Whos next?: %s\n", uint32_t_to_str(r->next_usable));
   printf("Mask: %s\n", uint32_t_to_str(r->mask));
@@ -53,7 +61,12 @@ void debug_range(struct range *r){
 
   std::cout << "Vector" << std::endl;
   for (auto & element : r->restricted) {
-    cout  << element << endl;
+    cout  << uint32_t_to_str(element) << endl;
+  }
+
+  std::cout << "pool" << std::endl;
+  for (auto & element : r->pool) {
+    cout  << uint32_t_to_str(element) << endl;
   }
   std::cout << "End" << std::endl;
 }
@@ -180,23 +193,35 @@ void rewrite_ip_address(unsigned char *buffer, uint32_t ip){
   }
 }
 
+void get_client_mac_address(unsigned char * buffer, char * str)
+{
+  unsigned char chaddr[6];
+  memcpy(chaddr, &buffer[28], 6);
+
+  sprintf(str, "%02x:%02x:%02x:%02x:%02x:%02x",chaddr[0],
+        chaddr[1], chaddr[2], chaddr[3], chaddr[4],chaddr[5]);
+  str[18]='\0';
+  //debug_field_hex("chaddr: " , chaddr, 6);
+}
+
 void print_lease(unsigned char *buffer, uint32_t addr){
-  unsigned char chaddr[16];
-  memcpy(chaddr, &buffer[28], 16);
+
+  char chaddr_str[18];
+  get_client_mac_address(buffer, chaddr_str);
 
   //2016-09-29_13:45
   time_t rawtime;
   struct tm * timeinfo;
   char ct_buffer[20];      // current time buffer
-  char lt_buffer[20];      // lease end
+  char le_buffer[20];      // lease end
 
   time (&rawtime);
   timeinfo = localtime (&rawtime);
   strftime (ct_buffer,20,"%F_%R",timeinfo);
 
   timeinfo->tm_hour +=1;
-  strftime (lt_buffer,20,"%F_%R",timeinfo);
-  printf("%s %s %s %s\n", chaddr, uint32_t_to_str(addr), ct_buffer, lt_buffer);
+  strftime (le_buffer,20,"%F_%R",timeinfo);
+  printf("%s %s %s %s\n", chaddr_str, uint32_t_to_str(addr), ct_buffer, le_buffer);
 }
 
 void prepare_offer(unsigned char * buffer)
@@ -380,18 +405,21 @@ char * ip_to_str(struct in_addr * addr){
 /*
 * check ip validity via inet_pton adn convert to binary ip
 */
-struct in_addr * str_to_ip(const char * addr){
-  struct in_addr * buf = NULL;
+uint32_t str_to_ip(const char * addr){
+
+  struct in_addr *buf = NULL;
   buf = (struct in_addr *) malloc(sizeof(struct in_addr));
   if (buf == NULL) {
     perror("Memmory alocation failure");
   }
   if ((inet_pton(AF_INET, addr, buf)) != 1) {
-    fprintf(stderr, "Entered ip address is not valid \n");
+    fprintf(stderr, "One of entered ip addresses is not valid \n");
     free(buf);
     exit(EXIT_FAILURE);
   }
-  return buf;
+  uint32_t tmp = buf->s_addr;
+  free(buf);
+  return tmp;
 }
 
 /**
@@ -418,12 +446,12 @@ void parse_reserved(char * list) {
       bzero(buf, sizeof(buf));
       strncpy(buf, &list[tmp] , i-tmp);
       tmp = i + 1;
-      r->restricted.push_back(string(buf));
+      r->restricted.push_back(str_to_ip(buf));
     }
     else if(i == len - 1){
       bzero(buf, sizeof(buf));
       strncpy(buf, &list[tmp] , i-tmp+1);
-      r->restricted.push_back(string(buf));
+      r->restricted.push_back(str_to_ip(buf));
     }
   }
 }
@@ -437,10 +465,11 @@ char * uint32_t_to_str(uint32_t ip) {
 uint32_t increment_ip_address(uint32_t add){
   return htonl(htonl(add)+1);
 }
+
 /*
 * check arguments from stdin
 */
-void check_args(int argc, char **argv, struct range *r)
+void check_args(int argc, char **argv)
 {
   if (argc == 2  && (strcmp(argv[1],"--help") == 0))  {
     help();
@@ -473,34 +502,31 @@ void check_args(int argc, char **argv, struct range *r)
       fprintf(stderr, "Cannot operate with given CIDR range \n");
       exit(EXIT_FAILURE);
     }
-    r->address = str_to_ip(addr);
-    //printf("%u\n", r->address->s_addr );
+    r->network = str_to_ip(addr);
+    //printf("%u\n", r->network->s_addr );
 
     int test_range = 0;
-    test_range = r->address->s_addr >> r->cidr;
+    test_range = r->network >> r->cidr;
     if (test_range != 0) {
       fprintf(stderr, "Provided range is not valid.\n" );
       exit(EXIT_FAILURE);
     }
-    r->server_address = increment_ip_address(r->address->s_addr);
-    r->next_usable = increment_ip_address(r->server_address);
     //printf("%u\n",r->server_address );
 
     string b_ip = "255.255.255.255";
     const char * cb_ip = b_ip.c_str();
 
-    struct in_addr * broadcast  = NULL;
+    uint32_t broadcast  = 0;
     broadcast = str_to_ip(cb_ip);
-    broadcast->s_addr = broadcast->s_addr >> r->cidr; //switch right
-    broadcast->s_addr = ntohl(broadcast->s_addr);     // convert byte order
-    broadcast->s_addr = ~broadcast->s_addr;           //invert
-    r->mask = broadcast->s_addr;
+    broadcast = broadcast >> r->cidr; //switch right
+    broadcast = ntohl(broadcast);     // convert byte order
+    broadcast = ~broadcast;           //invert
+    r->mask = broadcast;
 
-    broadcast->s_addr = ~broadcast->s_addr;
-    broadcast->s_addr = r->address->s_addr | broadcast->s_addr;
-    r->broadcast = broadcast->s_addr;
+    broadcast = ~broadcast;
+    broadcast = r->network | broadcast;
+    r->broadcast = broadcast;
 
-    free(broadcast);
     free(addr);
     free(prefix);
 
@@ -518,6 +544,24 @@ void check_args(int argc, char **argv, struct range *r)
   }
 }
 
+void init_range(){
+  r->next_usable = increment_ip_address(r->network);
+
+  uint32_t tmp = r->next_usable;
+  while (tmp != r->broadcast) {
+
+    r->pool.push_back(tmp);
+    tmp = increment_ip_address(tmp);
+  }
+
+  for (auto & element : r->restricted) {      // get rid of restricted addresses
+    r->pool.erase(remove(r->pool.begin(), r->pool.end(), element), r->pool.end());
+  }
+  r->server_address = r->pool.front();
+  r->pool.erase(r->pool.begin());
+  r->next_usable = r->pool.front();
+  r->pool.erase(r->pool.begin());
+}
 // ./dserver -p 192.168.0.0/24  [-e 192.168.0.1,192.168.0.2]
 /** TODO -e
 * MAIN
@@ -527,7 +571,8 @@ int main(int argc, char *argv[]){
   signal(SIGINT, destroy);
 
   r = init();
-  check_args(argc, argv, r);
+  check_args(argc, argv);
+  init_range();
   debug_range(r);
 
   init_server(67);
