@@ -9,14 +9,13 @@
 using namespace std;
 
 struct lease_item{
-  uint32_t mac_addr;
+  string mac_addr;
   uint32_t ip_addr;
-  struct tm *lease_end;
-
+  time_t lease_end;
 }lease_item;
 
 struct range{
-  uint32_t network;         // address range from stdin
+  uint32_t network;                 // address range from stdin
   int cidr;                         // prefix
   uint32_t server_address;          // server ip address
   uint32_t next_usable;             // first_usable ip address from diven range
@@ -24,7 +23,7 @@ struct range{
   uint32_t broadcast;               // broadcast
   vector <uint32_t> restricted;
   vector <uint32_t> pool;
-  vector <string> leased_list;
+  vector <struct lease_item> leased_list;
 }range;
 
 /*
@@ -47,7 +46,6 @@ struct range * init(){
 
 void destroy(int sig){
   free(r);
-
   signal(sig, SIG_IGN);
   exit(EXIT_SUCCESS);
 }
@@ -106,10 +104,8 @@ void help()
 * Send broad cast message
 */
 void send_msg(unsigned char * buffer){
-  int fd;
-  // UDP socket
-  struct sockaddr_in addr;
-  // address data structure
+  int fd;                                 // UDP socket
+  struct sockaddr_in addr;                // address data structure
 
   if ((fd=socket(AF_INET,SOCK_DGRAM,0)) < 0) // create a UDP socket for broadcast
     perror("Socket() failed");
@@ -132,8 +128,6 @@ void send_msg(unsigned char * buffer){
   if ((close(fd)) == -1)
     // close the socket
     perror("close() failed");
-  printf("Sent\n");
-
 }
 
 /**
@@ -151,36 +145,33 @@ void serve(int srv_socket)
   int rcvd = 0; // recieved data
   while ((rcvd = recvfrom(srv_socket, buffer, BUFSIZE, 0, (struct sockaddr *)&client, &length)) >= 0)
   {
-    printf("Discover received from %s, port %d\n",inet_ntoa(client.sin_addr),ntohs(client.sin_port));
-    printf("Message:\n");// \"%d\":end\n", buffer[0]);
-
     switch (buffer[242]) {
       case (int) 1:
-        send_offer(buffer, rcvd);
+        send_offer(buffer);
         break;
       case (int) 3:
-        send_ack(buffer, rcvd);
+        send_ack(buffer);
         break;
     }
 
-    memset( buffer, 0 ,sizeof(buffer));
+    memset(buffer, 0 ,sizeof(buffer));
   }
   close(srv_socket);
 }
 
-void send_offer(unsigned char * buffer, int rcvd){
-
-  handle_discover(rcvd, buffer);
+void send_offer(unsigned char * buffer){
+  //debug_discover(buffer);
   prepare_offer(buffer);
   send_msg(buffer);
 }
 
-void send_ack(unsigned char * buffer, int rcvd){
 
-  handle_discover(rcvd, buffer);
+void send_ack(unsigned char * buffer){
+  //debug_discover(buffer);
   prepare_ack(buffer);
   send_msg(buffer);
 }
+
 
 void prepare_ack(unsigned char *buffer){
   prepare_offer(buffer);
@@ -204,12 +195,11 @@ void get_client_mac_address(unsigned char * buffer, char * str)
   //debug_field_hex("chaddr: " , chaddr, 6);
 }
 
-void print_lease(unsigned char *buffer, uint32_t addr){
-
-  char chaddr_str[18];
-  get_client_mac_address(buffer, chaddr_str);
-
-  //2016-09-29_13:45
+/**
+* bind client ip address mac address and lease end time
+* store it
+*/
+void lease(uint32_t addr, char * chaddr_str){//2016-09-29_13:45
   time_t rawtime;
   struct tm * timeinfo;
   char ct_buffer[20];      // current time buffer
@@ -221,17 +211,50 @@ void print_lease(unsigned char *buffer, uint32_t addr){
 
   timeinfo->tm_hour +=1;
   strftime (le_buffer,20,"%F_%R",timeinfo);
+
+  struct lease_item item;   // write to lease list
+  item.mac_addr = (string) chaddr_str;
+  item.ip_addr = addr;
+  item.lease_end = mktime(timeinfo);
+  r->leased_list.insert(r->leased_list.begin(), item);
+
   printf("%s %s %s %s\n", chaddr_str, uint32_t_to_str(addr), ct_buffer, le_buffer);
 }
 
+uint32_t check_client_leases(char * chaddr_str){
+  uint32_t tmp_addr = 0;
+  unsigned int tmp_index = r->leased_list.size();
+  for(size_t i = 0; i != r->leased_list.size(); i++) {
+    if (r->leased_list[i].mac_addr == (string) chaddr_str) {
+      tmp_addr = r->leased_list[i].ip_addr;
+      tmp_index = i;
+      break;
+    }
+  }
+  if (tmp_index != r->leased_list.size()) {
+    r->leased_list.erase(r->leased_list.begin() + tmp_index);
+  }
+  return tmp_addr;
+}
+
+
 void prepare_offer(unsigned char * buffer)
 {
-  r->leased_list.push_back(uint32_t_to_str(r->next_usable));
-  print_lease(buffer, r->next_usable);
+  char chaddr_str[18];
+  get_client_mac_address(buffer, chaddr_str);
 
-  rewrite_ip_address(&buffer[16], r->next_usable);          //write ip to buffer
-  r->next_usable = increment_ip_address(r->next_usable);    // increment ip add
+  uint32_t renew = check_client_leases(chaddr_str);
+  if (!renew) {                                       // found bounded client
+    lease(r->next_usable, chaddr_str);
+    rewrite_ip_address(&buffer[16], r->next_usable);  //write ip to buffer
 
+    r->next_usable = r->pool.front();
+    r->pool.erase(r->pool.begin());
+  }
+  else{                                    //client not bounded yet. make a new
+    lease(renew, chaddr_str);
+    rewrite_ip_address(&buffer[16], renew);          //write ip to buffer
+  }
   rewrite_ip_address(&buffer[20], r->server_address);
 
   buffer[0] = (int) 2;      // msg type to reply
@@ -263,7 +286,7 @@ void prepare_offer(unsigned char * buffer)
 /**
 * receive and parse dhcp packet
 */
-void handle_discover(int rcvd, unsigned char * buffer){
+void debug_discover(unsigned char * buffer){
 
   int op = buffer[0];         // Request 1, Reply 2
   int h_type = buffer[1];
@@ -316,11 +339,6 @@ void handle_discover(int rcvd, unsigned char * buffer){
   debug_field_hex("magic_cookie: ", magic_cookie, sizeof(magic_cookie));
 
   //debug_buffer(buffer, rcvd);
-
-  if (strncmp((char*)buffer,"END.",4) == 0){    // "END." string exits application
-    printf("closing socket\n");
-    return;
-  }
 }
 
 void debug_field_int(const char * intro, unsigned char * field, int len)
@@ -490,12 +508,8 @@ void check_args(int argc, char **argv)
     if ( prefix == NULL) {
       perror("Count not allocate memmory");
     }
-    //printf("Len: %d\tPref:%d\n",addr_len, prefix_len );
-
     memcpy(addr, argv[2], addr_len);
     memcpy(prefix, &argv[2][addr_len +1] , prefix_len);
-    // printf("Prf: %s\n",prefix );
-    // printf("add %s\n",addr );
 
     r->cidr = check_num_args(prefix);
     if (r->cidr <= 0 || r->cidr == 31 || r->cidr >= 32) {
@@ -503,7 +517,6 @@ void check_args(int argc, char **argv)
       exit(EXIT_FAILURE);
     }
     r->network = str_to_ip(addr);
-    //printf("%u\n", r->network->s_addr );
 
     int test_range = 0;
     test_range = r->network >> r->cidr;
@@ -511,8 +524,6 @@ void check_args(int argc, char **argv)
       fprintf(stderr, "Provided range is not valid.\n" );
       exit(EXIT_FAILURE);
     }
-    //printf("%u\n",r->server_address );
-
     string b_ip = "255.255.255.255";
     const char * cb_ip = b_ip.c_str();
 
@@ -545,21 +556,22 @@ void check_args(int argc, char **argv)
 }
 
 void init_range(){
+  // first usable is network address +1
   r->next_usable = increment_ip_address(r->network);
 
   uint32_t tmp = r->next_usable;
-  while (tmp != r->broadcast) {
-
+  while (tmp != r->broadcast) {   // add all valid ip addresses to pool
     r->pool.push_back(tmp);
     tmp = increment_ip_address(tmp);
   }
 
-  for (auto & element : r->restricted) {      // get rid of restricted addresses
+  for (auto & element : r->restricted) {     // get rid of restricted addresses
     r->pool.erase(remove(r->pool.begin(), r->pool.end(), element), r->pool.end());
   }
-  r->server_address = r->pool.front();
+  r->server_address = r->pool.front();      // assign fisr available to server
   r->pool.erase(r->pool.begin());
-  r->next_usable = r->pool.front();
+
+  r->next_usable = r->pool.front();       // prepare next one for hosts
   r->pool.erase(r->pool.begin());
 }
 // ./dserver -p 192.168.0.0/24  [-e 192.168.0.1,192.168.0.2]
@@ -573,7 +585,7 @@ int main(int argc, char *argv[]){
   r = init();
   check_args(argc, argv);
   init_range();
-  debug_range(r);
+  //debug_range(r);
 
   init_server(67);
 }

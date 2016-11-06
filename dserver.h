@@ -29,7 +29,6 @@ const int DHCP_NAK = 6;
 const int DHCP_RELEASE = 7;
 const int DHCP_INFORM	 = 8;
 const int BUFSIZE = 512;
-
 const int LEASETIME = 3600;
 
 struct range *r = NULL;
@@ -46,12 +45,12 @@ void handle_communication(int server_socket);
 void init_server(int port);
 void serve(int client_socket);
 int get_socket();
-void send_ack(unsigned char * buffer, int rcvd);
-void send_offer(unsigned char * buffer, int rcvd);
+void send_ack(unsigned char * buffer);
+void send_offer(unsigned char * buffer);
 void prepare_offer(unsigned char * buffer);
 void rewrite_ip_address(unsigned char *buffer, uint32_t ip);
 void prepare_ack(unsigned char *buffer);
-void handle_discover(int rcvd, unsigned char * buffer);
+void debug_discover(unsigned char * buffer);
 uint32_t increment_ip_address(uint32_t add);
 void get_client_mac_address(unsigned char * buffer, unsigned char * str);
 
