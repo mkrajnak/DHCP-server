@@ -30,7 +30,7 @@ const int DHCP_RELEASE = 7;
 const int DHCP_INFORM	 = 8;
 const int BUFSIZE = 512;
 const int LEASETIME = 3600;
-
+const char * BROADCAST = "255.255.255.255";
 struct range *r = NULL;
 
 void help();
@@ -40,19 +40,21 @@ char * ip_to_str(struct in_addr * addr);
 char * uint32_t_to_str(uint32_t ip);
 int fork_handler();
 int get_new_client(int server_socket);
-void send_msg(int socket, char *msg);
+void send_msg(unsigned char * buffer, const char * sendto_addr);
 void handle_communication(int server_socket);
 void init_server(int port);
 void serve(int client_socket);
 int get_socket();
 void send_ack(unsigned char * buffer);
 void send_offer(unsigned char * buffer);
+void release(unsigned char * buffer);
 void prepare_offer(unsigned char * buffer);
 void rewrite_ip_address(unsigned char *buffer, uint32_t ip);
-void prepare_ack(unsigned char *buffer);
 void debug_discover(unsigned char * buffer);
 uint32_t increment_ip_address(uint32_t add);
-void get_client_mac_address(unsigned char * buffer, unsigned char * str);
+void get_client_mac_address(unsigned char * buffer, char * str);
+void lease(uint32_t addr, char * chaddr_str);
+uint32_t check_client_leases(char * chaddr_str);
 
 void debug_range(struct range *r);
 void debug_buffer(unsigned char * buffer, int rcvd);

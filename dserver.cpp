@@ -57,12 +57,12 @@ void debug_range(struct range *r){
   printf("Mask: %s\n", uint32_t_to_str(r->mask));
   printf("Broadcast: %s\n", uint32_t_to_str(r->broadcast));
 
-  std::cout << "Vector" << std::endl;
+  std::cout << "Restricted" << std::endl;
   for (auto & element : r->restricted) {
     cout  << uint32_t_to_str(element) << endl;
   }
 
-  std::cout << "pool" << std::endl;
+  std::cout << "Pool" << std::endl;
   for (auto & element : r->pool) {
     cout  << uint32_t_to_str(element) << endl;
   }
@@ -103,7 +103,7 @@ void help()
 /**
 * Send broad cast message
 */
-void send_msg(unsigned char * buffer){
+void send_msg(unsigned char * buffer, const char * sendto_addr){
   int fd;                                 // UDP socket
   struct sockaddr_in addr;                // address data structure
 
@@ -112,7 +112,7 @@ void send_msg(unsigned char * buffer){
 
   memset(&addr,0,sizeof(addr));
   addr.sin_family=AF_INET;
-  addr.sin_addr.s_addr=inet_addr("255.255.255.255"); // set the broadcast address
+  addr.sin_addr.s_addr=inet_addr(sendto_addr); // set the broadcast address
   addr.sin_port=htons(68);
   // set the broadcast port
   if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
@@ -146,15 +146,17 @@ void serve(int srv_socket)
   while ((rcvd = recvfrom(srv_socket, buffer, BUFSIZE, 0, (struct sockaddr *)&client, &length)) >= 0)
   {
     switch (buffer[242]) {
-      case (int) 1:
+      case (int) DHCP_DISCOVER:
         send_offer(buffer);
         break;
-      case (int) 3:
+      case (int) DHCP_REQUEST:
         send_ack(buffer);
         break;
+      case (int) DHCP_RELEASE:
+        release(buffer);
+        break;
     }
-
-    memset(buffer, 0 ,sizeof(buffer));
+    bzero(buffer,sizeof(buffer));
   }
   close(srv_socket);
 }
@@ -162,20 +164,43 @@ void serve(int srv_socket)
 void send_offer(unsigned char * buffer){
   //debug_discover(buffer);
   prepare_offer(buffer);
-  send_msg(buffer);
+  send_msg(buffer, BROADCAST);
 }
 
 
-void send_ack(unsigned char * buffer){
-  //debug_discover(buffer);
-  prepare_ack(buffer);
-  send_msg(buffer);
-}
-
-
-void prepare_ack(unsigned char *buffer){
+void send_ack(unsigned char *buffer){
   prepare_offer(buffer);
-  buffer[242] = (int) 5;
+
+  char chaddr_str[18];
+  get_client_mac_address(buffer, chaddr_str);
+
+  buffer[242] = (int) DHCP_ACK;  //ack
+
+  uint32_t renew = check_client_leases(chaddr_str);
+  if (!renew) {                         // get ip from pool
+    //std::cout << "New client" << std::endl;
+    lease(r->next_usable, chaddr_str);
+    rewrite_ip_address(&buffer[16], r->next_usable);  //write ip to buffer
+    send_msg(buffer, BROADCAST);
+    renew = r->next_usable;
+    r->next_usable = r->pool.front();
+    r->pool.erase(r->pool.begin());
+  }
+  else{                                    // found bounded client
+    //std::cout << "Renewing" << std::endl;
+    lease(renew, chaddr_str);
+    rewrite_ip_address(&buffer[16], renew);          //write ip to buffer
+    send_msg(buffer, uint32_t_to_str(renew));
+  }
+  //cout << "Next "<< uint32_t_to_str(r->next_usable) << endl;
+}
+
+void release(unsigned char * buffer){
+  char chaddr_str[18];
+  get_client_mac_address(buffer, chaddr_str);
+  uint32_t add_to_release = check_client_leases(chaddr_str);
+  if (add_to_release)
+    r->pool.push_back(add_to_release);
 }
 
 void rewrite_ip_address(unsigned char *buffer, uint32_t ip){
@@ -222,39 +247,38 @@ void lease(uint32_t addr, char * chaddr_str){//2016-09-29_13:45
 }
 
 uint32_t check_client_leases(char * chaddr_str){
+  if (r->leased_list.empty()) {         // check if eny leases are documented
+    return 0;
+  }
   uint32_t tmp_addr = 0;
+  // std::cout << "BEFORE" << std::endl;
+  // for(auto & a : r->leased_list)
+  // {
+  //   cout << a.mac_addr << " " << uint32_t_to_str(a.ip_addr) << " "<< endl;
+  // }
   unsigned int tmp_index = r->leased_list.size();
   for(size_t i = 0; i != r->leased_list.size(); i++) {
     if (r->leased_list[i].mac_addr == (string) chaddr_str) {
-      tmp_addr = r->leased_list[i].ip_addr;
-      tmp_index = i;
-      break;
+      tmp_addr = r->leased_list[i].ip_addr;   // if lease for client with chaddr
+      tmp_index = i;                          // is found remember its address
+      break;                                  // and index
     }
   }
-  if (tmp_index != r->leased_list.size()) {
+  if (tmp_index != r->leased_list.size()) {   // remove the record because we will make new one
     r->leased_list.erase(r->leased_list.begin() + tmp_index);
   }
+  // std::cout << "AFTER" << std::endl;
+  // for(auto & a : r->leased_list)
+  // {
+  //   cout << a.mac_addr << " " << uint32_t_to_str(a.ip_addr) << " "<< endl;
+  // }
   return tmp_addr;
 }
 
 
 void prepare_offer(unsigned char * buffer)
 {
-  char chaddr_str[18];
-  get_client_mac_address(buffer, chaddr_str);
-
-  uint32_t renew = check_client_leases(chaddr_str);
-  if (!renew) {                                       // found bounded client
-    lease(r->next_usable, chaddr_str);
-    rewrite_ip_address(&buffer[16], r->next_usable);  //write ip to buffer
-
-    r->next_usable = r->pool.front();
-    r->pool.erase(r->pool.begin());
-  }
-  else{                                    //client not bounded yet. make a new
-    lease(renew, chaddr_str);
-    rewrite_ip_address(&buffer[16], renew);          //write ip to buffer
-  }
+  rewrite_ip_address(&buffer[16], r->next_usable);
   rewrite_ip_address(&buffer[20], r->server_address);
 
   buffer[0] = (int) 2;      // msg type to reply
@@ -524,11 +548,9 @@ void check_args(int argc, char **argv)
       fprintf(stderr, "Provided range is not valid.\n" );
       exit(EXIT_FAILURE);
     }
-    string b_ip = "255.255.255.255";
-    const char * cb_ip = b_ip.c_str();
 
     uint32_t broadcast  = 0;
-    broadcast = str_to_ip(cb_ip);
+    broadcast = str_to_ip(BROADCAST);
     broadcast = broadcast >> r->cidr; //switch right
     broadcast = ntohl(broadcast);     // convert byte order
     broadcast = ~broadcast;           //invert
@@ -565,17 +587,24 @@ void init_range(){
     tmp = increment_ip_address(tmp);
   }
 
-  for (auto & element : r->restricted) {     // get rid of restricted addresses
-    r->pool.erase(remove(r->pool.begin(), r->pool.end(), element), r->pool.end());
+  if (!r->restricted.empty()) {
+    for (auto & element : r->restricted) {     // get rid of restricted addresses
+      r->pool.erase(remove(r->pool.begin(), r->pool.end(), element));
+    }
   }
   r->server_address = r->pool.front();      // assign fisr available to server
-  r->pool.erase(r->pool.begin());
-
+  r->pool.erase(remove(r->pool.begin(), r->pool.end(), r->server_address));
+  if (r->pool.empty()) {
+    fprintf(stderr, "ERR: No free ip addresses from given params\n");
+    free(r);
+    exit(EXIT_FAILURE);
+  }
   r->next_usable = r->pool.front();       // prepare next one for hosts
-  r->pool.erase(r->pool.begin());
+  r->pool.erase(remove(r->pool.begin(), r->pool.end(), r->next_usable));
+
 }
-// ./dserver -p 192.168.0.0/24  [-e 192.168.0.1,192.168.0.2]
-/** TODO -e
+
+/**
 * MAIN
 */
 int main(int argc, char *argv[]){
