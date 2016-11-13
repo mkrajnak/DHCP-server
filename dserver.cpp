@@ -1,10 +1,12 @@
+// TODO: Check lease time expiration  of addresses
+// send unicast packets
+// try to give hist desired ip address
 /**
 * Project: DHCP server created for ISA course at fit.vutbr.cz
 * Author:  Martin Krajnak
 * Mail:   xkrajn02@stud.fit.vutbr.cz
 * Date:   2.10.2016
 */
-
 #include "dserver.h"
 using namespace std;
 
@@ -119,8 +121,10 @@ void send_msg(unsigned char * buffer, const char * sendto_addr){
     perror("socket failed()");
   int on = 1;
   // set socket to send broadcast messages
-  if ((setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on))) == -1)
-    perror("setsockopt failed()");
+  if (strcmp(sendto_addr, BROADCAST) == 0) {
+    if ((setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on))) == -1)
+      perror("setsockopt failed()");
+  }
 
   if (sendto(fd,buffer, BUFSIZE,0,(struct sockaddr *) &addr, sizeof(addr)) < 0) // send data without EOL
     perror("sendto");
@@ -164,7 +168,10 @@ void serve(int srv_socket)
 void send_offer(unsigned char * buffer){
   //debug_discover(buffer);
   prepare_offer(buffer);
-  send_msg(buffer, BROADCAST);
+  if (buffer[10] == 0)
+    send_msg(buffer, uint32_t_to_str(r->next_usable));
+  else
+    send_msg(buffer, BROADCAST);
 }
 
 
@@ -175,13 +182,18 @@ void send_ack(unsigned char *buffer){
   get_client_mac_address(buffer, chaddr_str);
 
   buffer[242] = (int) DHCP_ACK;  //ack
-
-  uint32_t renew = check_client_leases(chaddr_str);
+  uint32_t renew = 0;
+  renew = check_client_leases(chaddr_str);
   if (!renew) {                         // get ip from pool
     //std::cout << "New client" << std::endl;
     lease(r->next_usable, chaddr_str);
     rewrite_ip_address(&buffer[16], r->next_usable);  //write ip to buffer
-    send_msg(buffer, BROADCAST);
+
+    if (buffer[10] == 0)
+      send_msg(buffer, uint32_t_to_str(r->next_usable));
+    else
+      send_msg(buffer, BROADCAST);
+
     renew = r->next_usable;
     r->next_usable = r->pool.front();
     r->pool.erase(r->pool.begin());
@@ -601,7 +613,6 @@ void init_range(){
   }
   r->next_usable = r->pool.front();       // prepare next one for hosts
   r->pool.erase(remove(r->pool.begin(), r->pool.end(), r->next_usable));
-
 }
 
 /**
