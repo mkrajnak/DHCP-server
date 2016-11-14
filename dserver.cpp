@@ -148,6 +148,7 @@ void serve(int srv_socket)
   int rcvd = 0; // recieved data
   while ((rcvd = recvfrom(srv_socket, buffer, BUFSIZE, 0, (struct sockaddr *)&client, &length)) >= 0)
   {
+    lease_expiration_check();
     switch (buffer[242]) {
       case (int) DHCP_DISCOVER:
         send_offer(buffer);
