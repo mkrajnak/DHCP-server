@@ -181,6 +181,9 @@ void lease_expiration_check(){
 
 void send_offer(unsigned char * buffer){
   //debug_discover(buffer);
+  char chaddr_str[18];
+  get_requested_ip_address(buffer, chaddr_str);
+
   prepare_offer(buffer);
   send_msg(buffer, BROADCAST);
 }
@@ -199,11 +202,7 @@ void send_ack(unsigned char *buffer){
     //std::cout << "New client" << std::endl;
     lease(r->next_usable, chaddr_str);
     rewrite_ip_address(&buffer[16], r->next_usable);  //write ip to buffer
-
-    if (buffer[10] == 0)
-      send_msg(buffer, uint32_t_to_str(r->next_usable));
-    else
-      send_msg(buffer, BROADCAST);
+    send_msg(buffer, BROADCAST);
 
     renew = r->next_usable;
     if (!r->pool.empty()) {
@@ -239,6 +238,21 @@ void rewrite_ip_address(unsigned char *buffer, uint32_t ip){
   }
 }
 
+void get_requested_ip_address(unsigned char * buffer, char * str){
+  for (int i = 240; i < 512; i++) {
+    if ((int)buffer[i] == 50 && (int)buffer[i+1] == 4) {
+      printf("FOUND\n" );
+      unsigned char chaddr[4];
+      memcpy(chaddr, &buffer[i+2], 4);
+      sprintf(str, "%d.%d.%d.%d",chaddr[0], chaddr[1], chaddr[2], chaddr[3]);
+      str[17]='\0';
+      break;
+    }
+  }
+  printf("ADD:%s\n",str);
+  //debug_field_hex("chaddr: " , chaddr, 6);
+}
+
 void get_client_mac_address(unsigned char * buffer, char * str)
 {
   unsigned char chaddr[6];
@@ -249,6 +263,7 @@ void get_client_mac_address(unsigned char * buffer, char * str)
   str[18]='\0';
   //debug_field_hex("chaddr: " , chaddr, 6);
 }
+
 
 /**
 * bind client ip address mac address and lease end time

@@ -55,6 +55,7 @@ uint32_t increment_ip_address(uint32_t add);
 void get_client_mac_address(unsigned char * buffer, char * str);
 void lease(uint32_t addr, char * chaddr_str);
 uint32_t check_client_leases(char * chaddr_str);
+void get_requested_ip_address(unsigned char * buffer, char * str);
 
 void debug_range(struct range *r);
 void debug_buffer(unsigned char * buffer, int rcvd);
