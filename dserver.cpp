@@ -168,10 +168,7 @@ void serve(int srv_socket)
 void send_offer(unsigned char * buffer){
   //debug_discover(buffer);
   prepare_offer(buffer);
-  if (buffer[10] == 0)
-    send_msg(buffer, uint32_t_to_str(r->next_usable));
-  else
-    send_msg(buffer, BROADCAST);
+  send_msg(buffer, BROADCAST);
 }
 
 
@@ -195,8 +192,10 @@ void send_ack(unsigned char *buffer){
       send_msg(buffer, BROADCAST);
 
     renew = r->next_usable;
-    r->next_usable = r->pool.front();
-    r->pool.erase(r->pool.begin());
+    if (!r->pool.empty()) {
+      r->next_usable = r->pool.front();
+      r->pool.erase(r->pool.begin());
+    }
   }
   else{                                    // found bounded client
     //std::cout << "Renewing" << std::endl;
@@ -625,7 +624,7 @@ int main(int argc, char *argv[]){
   r = init();
   check_args(argc, argv);
   init_range();
-  //debug_range(r);
+  debug_range(r);
 
   init_server(67);
 }
