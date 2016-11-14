@@ -1,5 +1,3 @@
-// TODO: Check lease time expiration  of addresses
-// try to give hist desired ip address
 /**
 * Project: DHCP server created for ISA course at fit.vutbr.cz
 * Author:  Martin Krajnak
@@ -184,19 +182,25 @@ void send_offer(unsigned char * buffer){
   //debug_discover(buffer);
   prepare_offer(buffer);
 
-  char chaddr_str[18];
-  get_client_mac_address(buffer, chaddr_str);
+  if (r->next_usable == 0) {
+    send_nak(buffer);
+  }
+  else {
+    char chaddr_str[18];
+    get_client_mac_address(buffer, chaddr_str);
 
-  lease(r->next_usable, chaddr_str, 0);
-  rewrite_ip_address(&buffer[16], r->next_usable);  //write ip to buffer
-  send_msg(buffer, BROADCAST);
+    lease(r->next_usable, chaddr_str, 0);
+    rewrite_ip_address(&buffer[16], r->next_usable);  //write ip to buffer
+    send_msg(buffer, BROADCAST);
+  }
 
   if (!r->pool.empty()) {
     r->next_usable = r->pool.front();
     r->pool.erase(r->pool.begin());
   }
+  else
+    r->next_usable = 0;
 }
-
 
 void send_ack(unsigned char *buffer){
   prepare_offer(buffer);
@@ -228,12 +232,10 @@ void send_ack(unsigned char *buffer){
     send_nak(buffer);
   }
   else {                                    // found bounded client
-    //std::cout << "Renewing" << std::endl;
     lease(renew, chaddr_str, 1);
     rewrite_ip_address(&buffer[16], renew);          //write ip to buffer
     send_msg(buffer, BROADCAST);
   }
-  //cout << "Next "<< uint32_t_to_str(r->next_usable) << endl;
 }
 
 void send_nak(unsigned char *buffer){
@@ -258,7 +260,6 @@ void rewrite_ip_address(unsigned char *buffer, uint32_t ip){
 void get_requested_ip_address(unsigned char * buffer, char * str){
   for (int i = 240; i < 512; i++) {
     if ((int)buffer[i] == 50 && (int)buffer[i+1] == 4) {
-      //printf("FOUND\n" );
       unsigned char chaddr[4];
       memcpy(chaddr, &buffer[i+2], 4);
       sprintf(str, "%d.%d.%d.%d",chaddr[0], chaddr[1], chaddr[2], chaddr[3]);
@@ -266,8 +267,6 @@ void get_requested_ip_address(unsigned char * buffer, char * str){
       break;
     }
   }
-  //printf("ADD:%s\n",str);
-  //debug_field_hex("chaddr: " , chaddr, 6);
 }
 
 void get_client_mac_address(unsigned char * buffer, char * str)
@@ -278,7 +277,6 @@ void get_client_mac_address(unsigned char * buffer, char * str)
   sprintf(str, "%02x:%02x:%02x:%02x:%02x:%02x",chaddr[0],
         chaddr[1], chaddr[2], chaddr[3], chaddr[4],chaddr[5]);
   str[18]='\0';
-  //debug_field_hex("chaddr: " , chaddr, 6);
 }
 
 
@@ -315,11 +313,6 @@ uint32_t check_client_leases(char * chaddr_str){
     return 0;
   }
   uint32_t tmp_addr = 0;
-  // std::cout << "BEFORE" << std::endl;
-  // for(auto & a : r->leased_list)
-  // {
-  //   cout << a.mac_addr << " " << uint32_t_to_str(a.ip_addr) << " "<< endl;
-  // }
   unsigned int tmp_index = r->leased_list.size();
   for(size_t i = 0; i != r->leased_list.size(); i++) {
     if (r->leased_list[i].mac_addr == (string) chaddr_str) {
@@ -331,11 +324,6 @@ uint32_t check_client_leases(char * chaddr_str){
   if (tmp_index != r->leased_list.size()) {   // remove the record because we will make new one
     r->leased_list.erase(r->leased_list.begin() + tmp_index);
   }
-  // std::cout << "AFTER" << std::endl;
-  // for(auto & a : r->leased_list)
-  // {
-  //   cout << a.mac_addr << " " << uint32_t_to_str(a.ip_addr) << " "<< endl;
-  // }
   return tmp_addr;
 }
 
@@ -367,7 +355,6 @@ void prepare_offer(unsigned char * buffer)
   buffer[261] = (int) 255;  //end
 
   bzero(&buffer[262],511-262);  //make sure garbage is deleted
-  //debug_buffer(buffer, 512);
 }
 
 
@@ -426,7 +413,6 @@ void debug_discover(unsigned char * buffer){
   memcpy(magic_cookie, &buffer[236], 4);
   debug_field_hex("magic_cookie: ", magic_cookie, sizeof(magic_cookie));
 
-  //debug_buffer(buffer, rcvd);
 }
 
 void debug_field_int(const char * intro, unsigned char * field, int len)
@@ -677,7 +663,6 @@ int main(int argc, char *argv[]){
   r = init();
   check_args(argc, argv);
   init_range();
-  //debug_range(r);
 
   init_server(67);
 }
