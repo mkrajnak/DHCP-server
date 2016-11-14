@@ -182,11 +182,19 @@ void lease_expiration_check(){
 
 void send_offer(unsigned char * buffer){
   //debug_discover(buffer);
-  char chaddr_str[18];
-  get_requested_ip_address(buffer, chaddr_str);
-
   prepare_offer(buffer);
+
+  char chaddr_str[18];
+  get_client_mac_address(buffer, chaddr_str);
+
+  lease(r->next_usable, chaddr_str, 0);
+  rewrite_ip_address(&buffer[16], r->next_usable);  //write ip to buffer
   send_msg(buffer, BROADCAST);
+
+  if (!r->pool.empty()) {
+    r->next_usable = r->pool.front();
+    r->pool.erase(r->pool.begin());
+  }
 }
 
 
@@ -201,21 +209,29 @@ void send_ack(unsigned char *buffer){
   renew = check_client_leases(chaddr_str);
   if (!renew) {                         // get ip from pool
     //std::cout << "New client" << std::endl;
-    lease(r->next_usable, chaddr_str);
-    rewrite_ip_address(&buffer[16], r->next_usable);  //write ip to buffer
-    send_msg(buffer, BROADCAST);
+    char ip_str[16];
+    get_requested_ip_address(buffer, ip_str);
+    renew = str_to_ip(ip_str);
 
-    renew = r->next_usable;
-    if (!r->pool.empty()) {
-      r->next_usable = r->pool.front();
-      r->pool.erase(r->pool.begin());
+    vector<uint32_t>::iterator it = r->pool.begin();
+    while(it != r->pool.end()){     // check if we have desired ip in pool
+      if (*it == renew) {
+        it = r->pool.erase(it);     // delete address from pool
+        lease(renew, chaddr_str, 1);
+        rewrite_ip_address(&buffer[16], renew);          //write ip to buffer
+        send_msg(buffer, BROADCAST);
+        return;
+      }
+      else
+          ++it;
     }
+    send_nak(buffer);
   }
-  else{                                    // found bounded client
+  else {                                    // found bounded client
     //std::cout << "Renewing" << std::endl;
-    lease(renew, chaddr_str);
+    lease(renew, chaddr_str, 1);
     rewrite_ip_address(&buffer[16], renew);          //write ip to buffer
-    send_msg(buffer, uint32_t_to_str(renew));
+    send_msg(buffer, BROADCAST);
   }
   //cout << "Next "<< uint32_t_to_str(r->next_usable) << endl;
 }
@@ -242,15 +258,15 @@ void rewrite_ip_address(unsigned char *buffer, uint32_t ip){
 void get_requested_ip_address(unsigned char * buffer, char * str){
   for (int i = 240; i < 512; i++) {
     if ((int)buffer[i] == 50 && (int)buffer[i+1] == 4) {
-      printf("FOUND\n" );
+      //printf("FOUND\n" );
       unsigned char chaddr[4];
       memcpy(chaddr, &buffer[i+2], 4);
       sprintf(str, "%d.%d.%d.%d",chaddr[0], chaddr[1], chaddr[2], chaddr[3]);
-      str[17]='\0';
+      str[16]='\0';
       break;
     }
   }
-  printf("ADD:%s\n",str);
+  //printf("ADD:%s\n",str);
   //debug_field_hex("chaddr: " , chaddr, 6);
 }
 
@@ -270,7 +286,7 @@ void get_client_mac_address(unsigned char * buffer, char * str)
 * bind client ip address mac address and lease end time
 * store it
 */
-void lease(uint32_t addr, char * chaddr_str){//2016-09-29_13:45
+void lease(uint32_t addr, char * chaddr_str, int print){//2016-09-29_13:45
   time_t rawtime;
   struct tm * timeinfo;
   char ct_buffer[20];      // current time buffer
@@ -289,7 +305,9 @@ void lease(uint32_t addr, char * chaddr_str){//2016-09-29_13:45
   item.lease_end = mktime(timeinfo);
   r->leased_list.insert(r->leased_list.begin(), item);
 
-  printf("%s %s %s %s\n", chaddr_str, uint32_t_to_str(addr), ct_buffer, le_buffer);
+  if (print) {
+    printf("%s %s %s %s\n", chaddr_str, uint32_t_to_str(addr), ct_buffer, le_buffer);
+  }
 }
 
 uint32_t check_client_leases(char * chaddr_str){
