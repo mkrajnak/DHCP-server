@@ -181,13 +181,20 @@ void lease_expiration_check(){
 void send_offer(unsigned char * buffer){
   //debug_discover(buffer);
   prepare_offer(buffer);
+  char chaddr_str[18];
+  get_client_mac_address(buffer, chaddr_str);
 
-  if (r->next_usable == 0) {
+  uint32_t ip = 0;
+  ip = check_client_leases(chaddr_str);
+  if (ip) {
+    lease(ip, chaddr_str, 0);
+    rewrite_ip_address(&buffer[16], ip);  //write ip to buffer
+    send_msg(buffer, BROADCAST);
+  }
+  else if (r->next_usable == 0) {
     send_nak(buffer);
   }
   else {
-    char chaddr_str[18];
-    get_client_mac_address(buffer, chaddr_str);
 
     lease(r->next_usable, chaddr_str, 0);
     rewrite_ip_address(&buffer[16], r->next_usable);  //write ip to buffer
@@ -203,19 +210,23 @@ void send_offer(unsigned char * buffer){
 }
 
 void send_ack(unsigned char *buffer){
-  prepare_offer(buffer);
 
   char chaddr_str[18];
+  char ip_str[16];
+  get_requested_ip_address(buffer, ip_str);
   get_client_mac_address(buffer, chaddr_str);
+
+  prepare_offer(buffer);
 
   buffer[242] = (int) DHCP_ACK;  //ack
   uint32_t renew = 0;
   renew = check_client_leases(chaddr_str);
   if (!renew) {                         // get ip from pool
     //std::cout << "New client" << std::endl;
-    char ip_str[16];
-    get_requested_ip_address(buffer, ip_str);
-    renew = str_to_ip(ip_str);
+    if (ip_str != NULL) {
+      printf("OMFG %s\n",ip_str );
+      renew = str_to_ip(ip_str);
+    }
 
     vector<uint32_t>::iterator it = r->pool.begin();
     while(it != r->pool.end()){     // check if we have desired ip in pool
@@ -264,9 +275,10 @@ void get_requested_ip_address(unsigned char * buffer, char * str){
       memcpy(chaddr, &buffer[i+2], 4);
       sprintf(str, "%d.%d.%d.%d",chaddr[0], chaddr[1], chaddr[2], chaddr[3]);
       str[16]='\0';
-      break;
+      return;
     }
   }
+  str = NULL;
 }
 
 void get_client_mac_address(unsigned char * buffer, char * str)
