@@ -1,5 +1,4 @@
 // TODO: Check lease time expiration  of addresses
-// send unicast packets
 // try to give hist desired ip address
 /**
 * Project: DHCP server created for ISA course at fit.vutbr.cz
@@ -165,6 +164,21 @@ void serve(int srv_socket)
   close(srv_socket);
 }
 
+void lease_expiration_check(){
+    time_t t;
+    time(&t);
+    vector<struct lease_item>::iterator it = r->leased_list.begin();
+    while(it != r->leased_list.end()) {
+      double seconds = difftime(t, it->lease_end);
+      if (seconds > 0) {
+        r->pool.push_back(it->ip_addr);   // address back to pool
+        it = r->leased_list.erase(it);    // delete from lease list
+      }
+      else
+        ++it;
+    }
+}
+
 void send_offer(unsigned char * buffer){
   //debug_discover(buffer);
   prepare_offer(buffer);
@@ -204,6 +218,11 @@ void send_ack(unsigned char *buffer){
     send_msg(buffer, uint32_t_to_str(renew));
   }
   //cout << "Next "<< uint32_t_to_str(r->next_usable) << endl;
+}
+
+void send_nak(unsigned char *buffer){
+  buffer[242] = (int) DHCP_NAK;  //nack
+  send_msg(buffer, BROADCAST);
 }
 
 void release(unsigned char * buffer){
@@ -624,7 +643,7 @@ int main(int argc, char *argv[]){
   r = init();
   check_args(argc, argv);
   init_range();
-  debug_range(r);
+  //debug_range(r);
 
   init_server(67);
 }
