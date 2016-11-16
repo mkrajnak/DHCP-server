@@ -59,6 +59,7 @@ void lease(uint32_t addr, char * chaddr_str, int print);
 uint32_t check_client_leases(char * chaddr_str);
 void get_requested_ip_address(unsigned char * buffer, char * str);
 void lease_expiration_check();
+void init_range();
 
 void debug_range(struct range *r);
 void debug_buffer(unsigned char * buffer, int rcvd);

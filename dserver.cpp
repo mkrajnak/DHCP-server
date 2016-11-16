@@ -653,8 +653,13 @@ void check_args(int argc, char **argv)
              tok = strtok(temp," ");            //stripping first value from line
              int col = 0;
              while(tok!=NULL){
-               if (col > 1) {
-                 fprintf(stderr, "Wring static file format\n");
+               for (unsigned int i = 0; i < sizeof(tok); i++) {
+                 if (isspace((int)tok[i])) {  // empty line bye bye
+                   return;
+                 }
+               }
+               if (col > 1) { // more than one column in file
+                 fprintf(stderr, "Wrong static file format\n");
                  exit(EXIT_FAILURE);
                }
                else if (col == 1){
@@ -662,21 +667,21 @@ void check_args(int argc, char **argv)
                  ip.erase(std::remove(ip.begin(), ip.end(), '\n'), ip.end());
                }
                else{
-                 if (mac.length() > 17) {
-                   fprintf(stderr, "Wring static file format(mac address)\n");
+                 mac = (string) tok;
+                 if (mac.length() == 16) { // just for sure
+                   fprintf(stderr, "Wrong static file format(mac address)\n");
                    exit(EXIT_FAILURE);
                  }
-                 mac = (string) tok;
                }
                tok = strtok(NULL," ");
                col++;
             }
             struct lease_item item;   // write to lease list
-            std::cout << mac << std::endl;
             item.mac_addr = mac;
             item.ip_addr = str_to_ip(ip.c_str());
-            item.lease_end = -1;
-            r->leased_list.insert(r->leased_list.begin(), item);
+            item.lease_end = -1;      //iset to nfinity
+            r->leased_list.insert(r->leased_list.begin(), item);  //permanently add lease item
+            r->restricted.push_back(item.ip_addr);  //add address to restricted
       }
   }
 }
@@ -695,10 +700,11 @@ void init_range(){
     r->pool.push_back(tmp);
     tmp = increment_ip_address(tmp);
   }
-
   if (!r->restricted.empty()) {
     for (auto & element : r->restricted) {     // get rid of restricted addresses
-      r->pool.erase(remove(r->pool.begin(), r->pool.end(), element));
+      if(find(r->pool.begin(), r->pool.end(), element) != r->pool.end()) {
+        r->pool.erase(remove(r->pool.begin(), r->pool.end(), element));
+      }
     }
   }
   r->server_address = r->pool.front();      // assign fisr available to server
