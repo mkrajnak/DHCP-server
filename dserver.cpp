@@ -65,6 +65,10 @@ void debug_range(struct range *r){
   for (auto & element : r->pool) {
     cout  << uint32_t_to_str(element) << endl;
   }
+  std::cout << "Leases" << std::endl;
+  for (auto & element : r->leased_list) {
+    cout << element.mac_addr << " "<< uint32_t_to_str(element.ip_addr) << " "<< element.lease_end << endl;
+  }
   std::cout << "End" << std::endl;
 }
 
@@ -95,6 +99,7 @@ void help()
         "\t\t./dserver -p 192.168.0.0/24 -s static.txt\n"
         "\t -p <ip_address/mask> is network ip addess representing range\n"
         "\t -e [ip_addresses] are reserved ip addresses which are not allowed to\n"
+        "\t -s <filename> are static leases those ip addresses will be available only for specific client\n"
         "be provided to clients, separated by comma \n"
       );
 }
@@ -127,7 +132,6 @@ void send_msg(unsigned char * buffer, const char * sendto_addr){
     perror("sendto");
 
   if ((close(fd)) == -1)
-    // close the socket
     perror("close() failed");
 }
 
@@ -168,6 +172,9 @@ void lease_expiration_check(){
     time(&t);
     vector<struct lease_item>::iterator it = r->leased_list.begin();
     while(it != r->leased_list.end()) {
+      if (it->lease_end == -1) {
+        continue;
+      }
       double seconds = difftime(t, it->lease_end);
       if (seconds > 0) {
         r->pool.push_back(it->ip_addr);   // address back to pool
@@ -195,7 +202,6 @@ void send_offer(unsigned char * buffer){
     send_nak(buffer);
   }
   else {
-
     lease(r->next_usable, chaddr_str, 0);
     rewrite_ip_address(&buffer[16], r->next_usable);  //write ip to buffer
     send_msg(buffer, BROADCAST);
@@ -632,7 +638,48 @@ void check_args(int argc, char **argv)
     if ((argc >= 5  && (strcmp(argv[3],"-e") == 0))) {
       parse_reserved(argv[4]);
     }
+    else if (!strcmp(argv[3], "-s") && argc == 5) {
+      FILE *f;
+      f = fopen(argv[4], "r");
+      if (f == NULL) {
+        fprintf(stderr, "Cannot open file\n" );
+        exit(EXIT_FAILURE);
+      }
+      char temp[1024];
+      char *tok;
+      string mac = "";
+      string ip = "";
+      while (fgets (temp, 1024, f) !=0 ){        //reading line from file
+             tok = strtok(temp," ");            //stripping first value from line
+             int col = 0;
+             while(tok!=NULL){
+               if (col > 1) {
+                 fprintf(stderr, "Wring static file format\n");
+                 exit(EXIT_FAILURE);
+               }
+               else if (col == 1){
+                 ip = (string) tok;
+                 ip.erase(std::remove(ip.begin(), ip.end(), '\n'), ip.end());
+               }
+               else{
+                 if (mac.length() > 17) {
+                   fprintf(stderr, "Wring static file format(mac address)\n");
+                   exit(EXIT_FAILURE);
+                 }
+                 mac = (string) tok;
+               }
+               tok = strtok(NULL," ");
+               col++;
+            }
+            struct lease_item item;   // write to lease list
+            std::cout << mac << std::endl;
+            item.mac_addr = mac;
+            item.ip_addr = str_to_ip(ip.c_str());
+            item.lease_end = -1;
+            r->leased_list.insert(r->leased_list.begin(), item);
+      }
   }
+}
   else{
     perror("Unrecognized arguments\n");
     exit(EXIT_FAILURE);
@@ -669,12 +716,11 @@ void init_range(){
 * MAIN
 */
 int main(int argc, char *argv[]){
-
   signal(SIGINT, destroy);
-
   r = init();
   check_args(argc, argv);
   init_range();
-
+  debug_range(r);
   init_server(67);
+  return 0;
 }

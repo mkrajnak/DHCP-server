@@ -18,6 +18,7 @@
 #include <limits.h>
 #include <signal.h>
 #include <time.h>
+#include <algorithm>
 
 const int DHCP_NONE = 0;
 const int DHCP_DISCOVER = 1;
