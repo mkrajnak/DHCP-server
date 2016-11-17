@@ -36,6 +36,7 @@ struct range *r = NULL;
 
 void help();
 void listen_wrapper(int server_socket);
+time_t get_lease_time(char * chaddr_str);
 char * ip_to_str(struct in_addr * addr);
 uint32_t str_to_ip(const char * addr);
 char * uint32_t_to_str(uint32_t ip);

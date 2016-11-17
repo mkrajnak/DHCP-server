@@ -173,6 +173,7 @@ void lease_expiration_check(){
     vector<struct lease_item>::iterator it = r->leased_list.begin();
     while(it != r->leased_list.end()) {
       if (it->lease_end == -1) {
+        it++;
         continue;
       }
       double seconds = difftime(t, it->lease_end);
@@ -180,8 +181,7 @@ void lease_expiration_check(){
         r->pool.push_back(it->ip_addr);   // address back to pool
         it = r->leased_list.erase(it);    // delete from lease list
       }
-      else
-        ++it;
+      it++;
     }
 }
 
@@ -216,7 +216,6 @@ void send_offer(unsigned char * buffer){
 }
 
 void send_ack(unsigned char *buffer){
-
   char chaddr_str[18];
   char ip_str[16];
   get_requested_ip_address(buffer, ip_str);
@@ -230,7 +229,6 @@ void send_ack(unsigned char *buffer){
   if (!renew) {                         // get ip from pool
     //std::cout << "New client" << std::endl;
     if (ip_str != NULL) {
-      printf("OMFG %s\n",ip_str );
       renew = str_to_ip(ip_str);
     }
 
@@ -264,6 +262,10 @@ void release(unsigned char * buffer){
   char chaddr_str[18];
   get_client_mac_address(buffer, chaddr_str);
   uint32_t add_to_release = check_client_leases(chaddr_str);
+  time_t t = get_lease_time(chaddr_str);
+  if (t == -1) {  //do not add to pool of addresses
+    return;
+  }
   if (add_to_release)
     r->pool.push_back(add_to_release);
 }
@@ -335,6 +337,9 @@ uint32_t check_client_leases(char * chaddr_str){
   for(size_t i = 0; i != r->leased_list.size(); i++) {
     if (r->leased_list[i].mac_addr == (string) chaddr_str) {
       tmp_addr = r->leased_list[i].ip_addr;   // if lease for client with chaddr
+      if (r->leased_list[i].lease_end == -1) {
+        return tmp_addr;                      // reserved addr do not deleted
+      }
       tmp_index = i;                          // is found remember its address
       break;                                  // and index
     }
@@ -343,6 +348,18 @@ uint32_t check_client_leases(char * chaddr_str){
     r->leased_list.erase(r->leased_list.begin() + tmp_index);
   }
   return tmp_addr;
+}
+
+time_t get_lease_time(char * chaddr_str){
+  if (r->leased_list.empty()) {         // check if eny leases are documented
+    return 0;
+  }
+  for(size_t i = 0; i != r->leased_list.size(); i++) {
+    if (r->leased_list[i].mac_addr == (string) chaddr_str) {
+      return r->leased_list[i].lease_end;   // if lease for client with chaddr
+    }
+  }
+  return 0;
 }
 
 
@@ -630,7 +647,6 @@ void check_args(int argc, char **argv)
 
     free(addr);
     free(prefix);
-
     if (argc == 4) {
       fprintf(stderr, "Missing list of ip address\n" );
       exit(EXIT_FAILURE);
@@ -638,7 +654,7 @@ void check_args(int argc, char **argv)
     if ((argc >= 5  && (strcmp(argv[3],"-e") == 0))) {
       parse_reserved(argv[4]);
     }
-    else if (!strcmp(argv[3], "-s") && argc == 5) {
+    else if (argc == 5 && strcmp(argv[3], "-s")== 0) {
       FILE *f;
       f = fopen(argv[4], "r");
       if (f == NULL) {
@@ -726,7 +742,7 @@ int main(int argc, char *argv[]){
   r = init();
   check_args(argc, argv);
   init_range();
-  debug_range(r);
+  //debug_range(r);
   init_server(67);
   return 0;
 }
