@@ -25,7 +25,7 @@ struct range{
   vector <struct lease_item> leased_list;
 }range;
 
-/*
+/**
 * INIT struct
 */
 struct range * init(){
@@ -43,12 +43,18 @@ struct range * init(){
   return r;
 }
 
+/**
+* dealloc the struct when signal received
+*/
 void destroy(int sig){
   free(r);
   signal(sig, SIG_IGN);
   exit(EXIT_SUCCESS);
 }
 
+/**
+* funcktion purly for debugging purposses
+*/
 void debug_range(struct range *r){
   printf("Address: %s/%d\n", uint32_t_to_str(r->network), r->cidr);
   printf("My address: %s\n", uint32_t_to_str(r->server_address));
@@ -118,11 +124,11 @@ void send_msg(unsigned char * buffer, const char * sendto_addr){
   addr.sin_family=AF_INET;
   addr.sin_addr.s_addr=inet_addr(sendto_addr); // set the broadcast address
   addr.sin_port=htons(68);
-  // set the broadcast port
+
   if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
     perror("socket failed()");
   int on = 1;
-  // set socket to send broadcast messages
+  // set socket to send broadcast messages, but only if broadcast is present
   if (strcmp(sendto_addr, BROADCAST) == 0) {
     if ((setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on))) == -1)
       perror("setsockopt failed()");
@@ -167,6 +173,9 @@ void serve(int srv_socket)
   close(srv_socket);
 }
 
+/*
+* go through leases and delete expired leases, give adress back to pool
+*/
 void lease_expiration_check(){
     time_t t;
     time(&t);
@@ -185,6 +194,9 @@ void lease_expiration_check(){
     }
 }
 
+/*
+* prepare buffer for offer message, check requested address and send it if possible
+*/
 void send_offer(unsigned char * buffer){
   //debug_discover(buffer);
   prepare_offer(buffer);
@@ -215,6 +227,9 @@ void send_offer(unsigned char * buffer){
     r->next_usable = 0;
 }
 
+/*
+* send ack message, determine if user is requesting renew
+*/
 void send_ack(unsigned char *buffer){
   char chaddr_str[18];
   char ip_str[16];
@@ -252,12 +267,17 @@ void send_ack(unsigned char *buffer){
     send_msg(buffer, BROADCAST);
   }
 }
-
+/*
+* simply set the NAK flag and seng message out
+*/
 void send_nak(unsigned char *buffer){
   buffer[242] = (int) DHCP_NAK;  //nack
   send_msg(buffer, BROADCAST);
 }
 
+/*
+*  delete address lease, add address to pool
+*/
 void release(unsigned char * buffer){
   char chaddr_str[18];
   get_client_mac_address(buffer, chaddr_str);
@@ -270,12 +290,18 @@ void release(unsigned char * buffer){
     r->pool.push_back(add_to_release);
 }
 
+/**
+*  rewrite ip address in desired part of buffer
+*/
 void rewrite_ip_address(unsigned char *buffer, uint32_t ip){
   for (int i = 0; i < 4; i++) {
     buffer[i] = (ip >> (i*8)) & 0xFF;
   }
 }
 
+/**
+*  parse address which client requests
+*/
 void get_requested_ip_address(unsigned char * buffer, char * str){
   for (int i = 240; i < 512; i++) {
     if ((int)buffer[i] == 50 && (int)buffer[i+1] == 4) {
@@ -289,6 +315,9 @@ void get_requested_ip_address(unsigned char * buffer, char * str){
   str = NULL;
 }
 
+/**
+* Parse client mac address from packet
+*/
 void get_client_mac_address(unsigned char * buffer, char * str)
 {
   unsigned char chaddr[6];
@@ -328,6 +357,9 @@ void lease(uint32_t addr, char * chaddr_str, int print){//2016-09-29_13:45
   }
 }
 
+/*
+* return ip address which is leased to client with chaddr_str
+*/
 uint32_t check_client_leases(char * chaddr_str){
   if (r->leased_list.empty()) {         // check if eny leases are documented
     return 0;
@@ -350,6 +382,9 @@ uint32_t check_client_leases(char * chaddr_str){
   return tmp_addr;
 }
 
+/*
+* return client lease time
+*/
 time_t get_lease_time(char * chaddr_str){
   if (r->leased_list.empty()) {         // check if eny leases are documented
     return 0;
@@ -362,7 +397,9 @@ time_t get_lease_time(char * chaddr_str){
   return 0;
 }
 
-
+/*
+* prepare content of buffer to offer
+*/
 void prepare_offer(unsigned char * buffer)
 {
   rewrite_ip_address(&buffer[16], r->next_usable);
@@ -583,6 +620,9 @@ void parse_reserved(char * list) {
   }
 }
 
+/*
+* simply convert string to ip address, inet_ntoa provides error corection
+*/
 char * uint32_t_to_str(uint32_t ip) {
     struct in_addr ip_addr;
     ip_addr.s_addr = ip;
@@ -699,6 +739,7 @@ void check_args(int argc, char **argv)
             r->leased_list.insert(r->leased_list.begin(), item);  //permanently add lease item
             r->restricted.push_back(item.ip_addr);  //add address to restricted
       }
+      fclose(f);
   }
 }
   else{
@@ -707,6 +748,9 @@ void check_args(int argc, char **argv)
   }
 }
 
+/*
+*  initiate the range of ip addresses, broadcast, router ip and other
+*/
 void init_range(){
   // first usable is network address +1
   r->next_usable = increment_ip_address(r->network);
