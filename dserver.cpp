@@ -787,6 +787,6 @@ int main(int argc, char *argv[]){
   check_args(argc, argv);
   init_range();
   //debug_range(r);
-  init_server(67);
+  init_server(DHCPSERVERPORT);
   return 0;
 }

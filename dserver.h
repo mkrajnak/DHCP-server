@@ -32,6 +32,7 @@ const int DHCP_INFORM	 = 8;
 const int BUFSIZE = 512;
 const int LEASETIME = 3600;
 const char * BROADCAST = "255.255.255.255";
+const int DHCPSERVERPORT = 67;
 struct range *r = NULL;
 
 void help();
