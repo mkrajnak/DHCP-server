@@ -21,4 +21,4 @@ while using -s parameter add ip address you want to restrict with some random ma
  * ./dserver -p 192.168.0.0/24 [-e 192.168.0.1,192.168.0.2]
  * ./dserver -p 192.168.0.0/24 -s static.txt
 
-* Author: Martin Krajnak <xkrajn02@stud.fit.vutbr.cz>:
+Author: Martin Krajnak <xkrajn02@stud.fit.vutbr.cz>:
