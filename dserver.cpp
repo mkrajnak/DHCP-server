@@ -167,6 +167,7 @@ void serve(int srv_socket)
       case (int) DHCP_RELEASE:
         release(buffer);
         break;
+      default: break;
     }
     bzero(buffer,sizeof(buffer));
   }
@@ -179,18 +180,24 @@ void serve(int srv_socket)
 void lease_expiration_check(){
     time_t t;
     time(&t);
+    if (r->leased_list.empty()) {
+      return;
+    }
     vector<struct lease_item>::iterator it = r->leased_list.begin();
     while(it != r->leased_list.end()) {
       if (it->lease_end == -1) {
-        it++;
+        ++it;
         continue;
       }
       double seconds = difftime(t, it->lease_end);
-      if (seconds > 0) {
-        r->pool.push_back(it->ip_addr);   // address back to pool
+      if (seconds > 0){
+        debug_range(r);
+        uint32_t tmp = it->ip_addr;
+        r->pool.push_back(tmp);   // address back to pool
         it = r->leased_list.erase(it);    // delete from lease list
       }
-      it++;
+      else
+        ++it;
     }
 }
 
@@ -209,6 +216,7 @@ void send_offer(unsigned char * buffer){
     lease(ip, chaddr_str, 0);
     rewrite_ip_address(&buffer[16], ip);  //write ip to buffer
     send_msg(buffer, BROADCAST);
+    return;
   }
   else if (r->next_usable == 0) {
     send_nak(buffer);
@@ -241,11 +249,11 @@ void send_ack(unsigned char *buffer){
   buffer[242] = (int) DHCP_ACK;  //ack
   uint32_t renew = 0;
   renew = check_client_leases(chaddr_str);
+  if (ip_str != NULL) {
+    renew = str_to_ip(ip_str);
+  }
   if (!renew) {                         // get ip from pool
     //std::cout << "New client" << std::endl;
-    if (ip_str != NULL) {
-      renew = str_to_ip(ip_str);
-    }
 
     vector<uint32_t>::iterator it = r->pool.begin();
     while(it != r->pool.end()){     // check if we have desired ip in pool
@@ -577,9 +585,7 @@ uint32_t str_to_ip(const char * addr){
     perror("Memmory alocation failure");
   }
   if ((inet_pton(AF_INET, addr, buf)) != 1) {
-    fprintf(stderr, "One of entered ip addresses is not valid \n");
-    free(buf);
-    exit(EXIT_FAILURE);
+    return 0;
   }
   uint32_t tmp = buf->s_addr;
   free(buf);
